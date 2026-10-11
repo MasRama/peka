@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- `/peka:status` lists every memory (with its type and description) and every skill
+  (with its description and usage), not just counts.
+- `/peka:status show <name>` opens a memory or skill in full.
+
 ## 0.1.1
 
 - `/peka:remember <what>` saves to global memory immediately, updating an existing

@@ -21,6 +21,7 @@ import { listSkills, syncLinks, writeCuratorReport } from "./lib/skills.mjs";
 import { buildDigest, writeDigest } from "./lib/digest.mjs";
 import { searchTranscripts } from "./lib/search.mjs";
 import { curatorInstruction, reviewerInstruction } from "./lib/prompts.mjs";
+import { readFrontmatter } from "./lib/frontmatter.mjs";
 
 const env = process.env;
 const now = new Date();
@@ -84,7 +85,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.1", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.2", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -119,16 +120,27 @@ function where() {
   out(`Memory dir: ${d.memory}`, `Memory index: ${path.join(d.memory, "MEMORY.md")}`, `Skills dir: ${d.skills}`);
 }
 
+function frontmatterOf(file) {
+  try {
+    return readFrontmatter(fs.readFileSync(file, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function memoryFiles() {
+  try {
+    return fs.readdirSync(d.memory).filter((f) => f.endsWith(".md") && f !== "MEMORY.md").sort();
+  } catch {
+    return [];
+  }
+}
+
 function status() {
   if (!isSetUp(d)) return out("PEKA is not set up yet. Run /peka:setup.");
   const usage = loadUsage(d);
   const curator = loadCurator(d);
-  let memories = [];
-  try {
-    memories = fs.readdirSync(d.memory).filter((f) => f.endsWith(".md") && f !== "MEMORY.md");
-  } catch {
-    // No memories yet.
-  }
+  const memories = memoryFiles();
   const skills = listSkills(d);
   const claudeSkills = path.join(claude, "skills");
   const conflicts = skills.filter((name) => {
@@ -138,17 +150,40 @@ function status() {
   });
   out(
     `PEKA home: ${d.home}`,
+    "",
     `Memories: ${memories.length} (${d.memory})`,
+    ...memories.map((file) => {
+      const fm = frontmatterOf(path.join(d.memory, file));
+      return `  - ${file.slice(0, -3)} [${fm.type || "?"}] — ${fm.description || "(no description)"}`;
+    }),
+    "",
     `Skills: ${skills.length} (${d.skills})`,
     ...skills.map((name) => {
+      const fm = frontmatterOf(path.join(d.skills, name, "SKILL.md"));
       const u = usage.skills[name] ?? {};
       const flags = [u.state ?? "active", u.pinned ? "pinned" : null, conflicts.includes(name) ? "name conflict" : null];
-      return `  - ${name}: ${u.uses ?? 0} uses, last ${(u.lastUsed ?? "never").slice(0, 10)}, ${flags.filter(Boolean).join(", ")}`;
+      return [
+        `  - ${name} — ${fm.description || "(no description)"}`,
+        `    ${u.uses ?? 0} uses, last ${(u.lastUsed ?? "never").slice(0, 10)}, ${flags.filter(Boolean).join(", ")}`,
+      ].join("\n");
     }),
+    "",
     `Curator: last run ${curator.lastRunAt ?? "never"}`,
     `Review every ${cfg.memoryInterval} turns (memory) / ${cfg.skillInterval} tool calls (skills); reviewer ${cfg.reviewerModel}, curator ${cfg.curatorModel}, auto-commit ${cfg.autoCommit ? "on" : "off"}`,
+    "Open one in full with /peka:status show <name>.",
   );
   if (conflicts.length) out(`Name conflicts (a skill of yours already uses the name, PEKA left it alone): ${conflicts.join(", ")}`);
+}
+
+function show(name) {
+  requireSetup();
+  if (!name) throw new UsageError("show needs a memory or skill name");
+  const base = name.endsWith(".md") ? name.slice(0, -3) : name;
+  if (!plainName(base)) throw new Error(`Not a memory or skill name: "${name}".`);
+  const candidates = [path.join(d.memory, `${base}.md`), path.join(d.skills, base, "SKILL.md")];
+  const found = candidates.filter((f) => fs.lstatSync(f, { throwIfNoEntry: false })?.isFile());
+  if (!found.length) throw new Error(`No memory or skill named "${base}". Run /peka:status to list them.`);
+  for (const file of found) out(`==> ${file}`, fs.readFileSync(file, "utf8").trimEnd(), "");
 }
 
 function setPin(name, pinned) {
@@ -214,6 +249,7 @@ const commands = {
   legacy,
   status,
   where,
+  show: () => show(args[0]),
   pin: () => setPin(args[0], true),
   unpin: () => setPin(args[0], false),
   search: () => search(args),
@@ -226,7 +262,7 @@ try {
   commands[command]();
 } catch (err) {
   if (err instanceof UsageError) {
-    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
+    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
     process.exit(2);
   }
   process.stderr.write(`${err instanceof SettingsParseError ? "" : "peka: "}${err.message}\n`);
