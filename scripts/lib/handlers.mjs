@@ -33,6 +33,10 @@ export function contextFrom(env = process.env, now = new Date()) {
   };
 }
 
+function stamp(now) {
+  return now.toISOString().replace(/[-:.TZ]/g, "");
+}
+
 function since(now, iso) {
   return iso ? now.getTime() - Date.parse(iso) : Infinity;
 }
@@ -139,8 +143,7 @@ function reviewPrompt(input, ctx, s) {
   const digest = buildDigest(transcript, s.lastDigestLine, { lastAssistantMessage: input.last_assistant_message });
   if (!digest.text) return null;
 
-  const stamp = ctx.now.toISOString().replace(/[-:.TZ]/g, "");
-  const file = path.join(ctx.d.digests, `${safeId(input.session_id)}-${stamp}.md`);
+  const file = path.join(ctx.d.digests, `${safeId(input.session_id)}-${stamp(ctx.now)}.md`);
   const header = [`# Session digest`, ``, `Session: ${input.session_id ?? "unknown"}`, `Project: ${input.cwd ?? "unknown"}`, ``, ``].join("\n");
   fs.mkdirSync(ctx.d.digests, { recursive: true });
   fs.writeFileSync(file, header + digest.text + "\n");
@@ -222,15 +225,20 @@ function applyCuratorActions(ctx) {
   }
   saveUsage(ctx.d, usage);
 
-  const deleted = [];
+  // "Deleted" memories are moved aside, never removed.
+  const memoryArchive = path.join(ctx.d.home, "archive", "memory");
+  const retired = [];
   for (const name of Array.isArray(actions.deleteMemories) ? actions.deleteMemories : []) {
     if (!plainName(name) || !name.endsWith(".md") || name === "MEMORY.md") continue;
     const target = path.join(ctx.d.memory, name);
     if (!fs.lstatSync(target, { throwIfNoEntry: false })?.isFile()) continue;
-    fs.rmSync(target);
-    deleted.push(name);
+    fs.mkdirSync(memoryArchive, { recursive: true });
+    let dest = path.join(memoryArchive, name);
+    if (fs.existsSync(dest)) dest = path.join(memoryArchive, `${name.slice(0, -3)}-${stamp(ctx.now)}.md`);
+    fs.renameSync(target, dest);
+    retired.push(name);
   }
-  log(ctx.d, `curator actions: archived [${archived.join(", ")}], deleted memories [${deleted.join(", ")}]`);
+  log(ctx.d, `curator actions: archived skills [${archived.join(", ")}], archived memories [${retired.join(", ")}]`);
 }
 
 function pruneDigests(ctx) {

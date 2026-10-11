@@ -222,6 +222,7 @@ test("SubagentStop for the curator applies safe actions and records the run", ()
   assert.ok(fs.existsSync(path.join(ctx.d.archive, "dup", "SKILL.md")));
   assert.equal(fs.existsSync(path.join(ctx.claudeSkillsDir, "dup")), false);
   assert.equal(fs.existsSync(path.join(ctx.d.memory, "old.md")), false);
+  assert.equal(fs.readFileSync(path.join(ctx.d.home, "archive", "memory", "old.md"), "utf8"), "x");
   assert.ok(fs.existsSync(path.join(ctx.d.memory, "MEMORY.md")));
   assert.ok(fs.existsSync(outside));
   assert.equal(fs.existsSync(path.join(ctx.d.state, "curator-actions.json")), false);
