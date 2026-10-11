@@ -125,7 +125,7 @@ test("pin and unpin persist; unknown skills are rejected", () => {
   assert.equal(s.run("pin", "deploy").status, 0);
   const usage = () => JSON.parse(fs.readFileSync(path.join(s.home, "state", "usage.json"), "utf8"));
   assert.equal(usage().skills.deploy.pinned, true);
-  assert.match(s.run("status").stdout, /deploy.*pinned/);
+  assert.match(s.run("status").stdout, /- deploy — d\n    0 uses, last never, active, pinned/);
   assert.equal(s.run("unpin", "deploy").status, 0);
   assert.equal(usage().skills.deploy.pinned, false);
   assert.equal(s.run("pin", "nope").status, 1);
@@ -180,4 +180,47 @@ test("where prints the store locations once set up", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.stdout.includes(`Memory dir: ${path.join(s.home, "memory")}`));
   assert.ok(r.stdout.includes(`Skills dir: ${path.join(s.home, "skills")}`));
+});
+
+function seedStore(s) {
+  s.run("setup", "--apply");
+  const mem = path.join(s.home, "memory");
+  fs.writeFileSync(path.join(mem, "MEMORY.md"), "- [pnpm](prefers-pnpm.md) — package manager\n");
+  fs.writeFileSync(
+    path.join(mem, "prefers-pnpm.md"),
+    '---\nname: prefers-pnpm\ndescription: "Always use pnpm, never npm"\nmetadata:\n  type: feedback\n---\n\nUse pnpm.\n**Why:** monorepo.\n',
+  );
+  fs.writeFileSync(path.join(mem, "loose.md"), "no frontmatter here\n");
+  fs.mkdirSync(path.join(s.home, "skills", "deploy-api"), { recursive: true });
+  fs.writeFileSync(
+    path.join(s.home, "skills", "deploy-api", "SKILL.md"),
+    "---\nname: deploy-api\ndescription: Deploy the API to staging with pm2\n---\n\n# Deploy\n1. ssh in\n",
+  );
+}
+
+test("status lists every memory and skill with its description", () => {
+  const s = sandbox();
+  seedStore(s);
+  const r = s.run("status");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Memories: 2/);
+  assert.match(r.stdout, /prefers-pnpm \[feedback\] — Always use pnpm, never npm/);
+  assert.match(r.stdout, /loose \[\?\] — \(no description\)/);
+  assert.match(r.stdout, /deploy-api — Deploy the API to staging with pm2/);
+  assert.match(r.stdout, /\/peka:status show <name>/);
+});
+
+test("show prints a memory or skill in full and rejects paths", () => {
+  const s = sandbox();
+  seedStore(s);
+  const mem = s.run("show", "prefers-pnpm");
+  assert.equal(mem.status, 0, mem.stderr);
+  assert.match(mem.stdout, /\*\*Why:\*\* monorepo/);
+  assert.match(mem.stdout, /prefers-pnpm\.md/);
+  assert.match(s.run("show", "prefers-pnpm.md").stdout, /Use pnpm/);
+  assert.match(s.run("show", "deploy-api").stdout, /1\. ssh in/);
+  assert.match(s.run("show", "MEMORY").stdout, /package manager/);
+  assert.equal(s.run("show", "nope").status, 1);
+  assert.equal(s.run("show", "../state/setup").status, 1);
+  assert.equal(s.run("show").status, 2);
 });

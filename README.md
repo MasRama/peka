@@ -95,7 +95,8 @@ conflict in `/peka:status`.
 | Command | What it does |
 |---|---|
 | `/peka:setup` | first-time setup and import of old memories |
-| `/peka:status` | what PEKA knows, skill usage, settings |
+| `/peka:status` | every memory and skill PEKA has, with descriptions and usage |
+| `/peka:status show <name>` | open one memory or skill in full |
 | `/peka:status pin <skill>` | never mark this skill stale or archive it (`unpin` to undo) |
 | `/peka:remember <what>` | save something to memory right now |
 | `/peka:search <terms>` | search your past sessions in all projects |
