@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+- `/peka:remember <what>` saves to global memory immediately, updating an existing
+  memory instead of duplicating it.
+- Every session (and every compaction) starts with a short brief telling Claude to check
+  the memory index before a task, save corrections right away, and use learned skills.
+- `peka where` prints the store locations.
+
 ## 0.1.0
 
 First release.

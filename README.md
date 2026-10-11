@@ -12,6 +12,7 @@ You keep working; nothing asks for approval. Everything stays on your machine, i
 Markdown, with git history.
 
 - **Global memory.** One store in `~/.peka`, loaded into every session in every project.
+- **Remembers on purpose.** Say `/peka:remember …` and it is saved immediately.
 - **Learns by itself.** Memories and reusable skills are written by a background
   reviewer while you work.
 - **Keeps itself tidy.** A weekly curator merges duplicates, fixes the index, and
@@ -59,17 +60,20 @@ Start a new session afterwards.
 └── .git                  local history, committed after every review
 ```
 
-1. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls
+1. **Briefing.** Each session starts with a short note telling Claude its memory is
+   global, to check the index before a task, and to save corrections right away
+   (`/peka:remember` does the same on demand).
+2. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls
    since it last saved a skill.
-2. **Checkpoint.** When a counter reaches its interval (10 turns / 20 tool calls by
+3. **Checkpoint.** When a counter reaches its interval (10 turns / 20 tool calls by
    default), PEKA writes a compact digest of the recent conversation and asks Claude to
    launch the `peka:reviewer` agent in the background.
-3. **Review.** The reviewer reads the digest and your existing memory, then saves or
+4. **Review.** The reviewer reads the digest and your existing memory, then saves or
    updates memories and skills. It has no shell access: it can only read files and edit
    files inside `~/.peka`.
-4. **Commit.** When the reviewer finishes, PEKA links new skills into
+5. **Commit.** When the reviewer finishes, PEKA links new skills into
    `~/.claude/skills` and commits `~/.peka` to its local git repository.
-5. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
+6. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
    memories and tightens the index. Skills unused for 14 days are marked stale and
    archived after 30, unless you pin them.
 
@@ -93,6 +97,7 @@ conflict in `/peka:status`.
 | `/peka:setup` | first-time setup and import of old memories |
 | `/peka:status` | what PEKA knows, skill usage, settings |
 | `/peka:status pin <skill>` | never mark this skill stale or archive it (`unpin` to undo) |
+| `/peka:remember <what>` | save something to memory right now |
 | `/peka:search <terms>` | search your past sessions in all projects |
 | `/peka:review` | learn from the current session now |
 | `/peka:curate` | tidy memory and skills now |

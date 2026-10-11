@@ -35,3 +35,14 @@ export function curatorInstruction({ report, d, model }) {
     `Skills dir: ${d.skills}`,
   ]);
 }
+
+export function sessionBrief(d) {
+  return [
+    `PEKA is active. Your memory in ${d.memory} is global: every project reads and writes the same store, and its index MEMORY.md is already in your context.`,
+    `- Before starting a task, scan the index for entries that apply (this project, the user's preferences, the tools involved) and read those files. Follow them without being asked.`,
+    `- When the user corrects you, states a preference, or asks you to remember something, save it right away using /peka:remember; do not wait for a later review.`,
+    `- In project-specific memories, name the project, since all projects share them.`,
+    `- A memory can be out of date. If it conflicts with what you observe now, trust what you observe and fix the memory.`,
+    `- Skills PEKA learned are in your skill list. Use one whenever its description fits the task.`,
+  ].join("\n");
+}

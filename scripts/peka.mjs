@@ -84,7 +84,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.0", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.1", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -112,6 +112,11 @@ function legacy() {
   const total = groups.reduce((n, g) => n + g.files.length, 0);
   out(`${total} files in ${groups.length} projects:`);
   for (const g of groups) out(``, `${g.project}  (${g.dir})`, ...g.files.map((f) => `  - ${f}`));
+}
+
+function where() {
+  requireSetup();
+  out(`Memory dir: ${d.memory}`, `Memory index: ${path.join(d.memory, "MEMORY.md")}`, `Skills dir: ${d.skills}`);
 }
 
 function status() {
@@ -208,6 +213,7 @@ const commands = {
   setup: () => setup(args),
   legacy,
   status,
+  where,
   pin: () => setPin(args[0], true),
   unpin: () => setPin(args[0], false),
   search: () => search(args),
@@ -220,7 +226,7 @@ try {
   commands[command]();
 } catch (err) {
   if (err instanceof UsageError) {
-    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
+    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
     process.exit(2);
   }
   process.stderr.write(`${err instanceof SettingsParseError ? "" : "peka: "}${err.message}\n`);

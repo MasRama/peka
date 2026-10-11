@@ -19,7 +19,7 @@ function frontmatter(file) {
 }
 
 const agents = ["reviewer", "curator"];
-const skills = ["setup", "search", "status", "review", "curate"];
+const skills = ["setup", "search", "status", "review", "curate", "remember"];
 
 test("agents declare name, description, model, background and no Bash", () => {
   const models = { reviewer: "sonnet", curator: "opus" };
@@ -66,9 +66,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.0");
+  assert.equal(pkg.version, "0.1.1");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.0/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.1/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);

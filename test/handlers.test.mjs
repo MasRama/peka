@@ -70,7 +70,22 @@ test("SessionStart creates dirs and asks for a skill reload when links change", 
   const out = handle("SessionStart", { session_id: "a" }, ctx);
   assert.equal(out.hookSpecificOutput.reloadSkills, true);
   assert.ok(fs.lstatSync(path.join(ctx.claudeSkillsDir, "deploy")).isSymbolicLink());
-  assert.equal(handle("SessionStart", { session_id: "a" }, ctx), null);
+  assert.equal(handle("SessionStart", { session_id: "a" }, ctx).hookSpecificOutput.reloadSkills, undefined);
+});
+
+test("SessionStart briefs Claude to use the global memory", () => {
+  const ctx = make();
+  for (const source of ["startup", "resume", "clear", "compact"]) {
+    const out = handle("SessionStart", { session_id: "a", source }, ctx).hookSpecificOutput;
+    assert.equal(out.hookEventName, "SessionStart");
+    const text = out.additionalContext;
+    assert.ok(text.includes(ctx.d.memory), source);
+    assert.match(text, /global/);
+    assert.match(text, /MEMORY\.md/);
+    assert.match(text, /save it right away/);
+    assert.match(text, /\/peka:remember/);
+    assert.ok(text.length < 1500, `brief is ${text.length} chars`);
+  }
 });
 
 test("SessionStart runs the lifecycle at most once a day", () => {
