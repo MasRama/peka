@@ -17,7 +17,7 @@ import {
 import { classify, isInside, resolveReal } from "./guard.mjs";
 import { applyLifecycle, archiveSkill, listSkills, recordUse, syncLinks, writeCuratorReport } from "./skills.mjs";
 import { buildDigest, writeDigest } from "./digest.mjs";
-import { curatorInstruction, reviewerInstruction } from "./prompts.mjs";
+import { curatorInstruction, reviewerInstruction, sessionBrief } from "./prompts.mjs";
 import { autoCommit, ensureRepo } from "./git.mjs";
 
 const DAY = 86400000;
@@ -76,7 +76,9 @@ function sessionStart(ctx) {
       commit(ctx, `peka: archive unused skills (${r.archived.join(", ")})`);
     }
   }
-  return sync(ctx) ? { hookSpecificOutput: { hookEventName: "SessionStart", reloadSkills: true } } : null;
+  const out = { hookEventName: "SessionStart", additionalContext: sessionBrief(ctx.d) };
+  if (sync(ctx)) out.reloadSkills = true;
+  return { hookSpecificOutput: out };
 }
 
 function userPromptSubmit(input, ctx) {

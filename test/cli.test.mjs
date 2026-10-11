@@ -171,3 +171,13 @@ test("commands other than setup, legacy, search and status require setup", () =>
   assert.match(r.stderr, /\/peka:setup/);
   assert.equal(s.run("bogus").status, 2);
 });
+
+test("where prints the store locations once set up", () => {
+  const s = sandbox();
+  assert.equal(s.run("where").status, 1);
+  s.run("setup", "--apply");
+  const r = s.run("where");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`Memory dir: ${path.join(s.home, "memory")}`));
+  assert.ok(r.stdout.includes(`Skills dir: ${path.join(s.home, "skills")}`));
+});
