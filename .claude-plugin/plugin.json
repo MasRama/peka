@@ -1,0 +1,49 @@
+{
+  "name": "peka",
+  "displayName": "PEKA",
+  "version": "0.1.0",
+  "description": "Your coding agent learns from experience. Global memory and background learning for Claude Code.",
+  "author": {
+    "name": "MasRama"
+  },
+  "license": "MIT",
+  "keywords": ["memory", "learning", "skills", "self-improving", "hooks"],
+  "userConfig": {
+    "memory_interval": {
+      "type": "number",
+      "title": "Memory review interval",
+      "description": "User turns without a memory write before PEKA runs a background review. 0 turns it off.",
+      "default": 10,
+      "min": 0,
+      "max": 1000
+    },
+    "skill_interval": {
+      "type": "number",
+      "title": "Skill review interval",
+      "description": "Tool calls without a skill write before PEKA runs a background review. 0 turns it off.",
+      "default": 20,
+      "min": 0,
+      "max": 1000
+    },
+    "reviewer_model": {
+      "type": "string",
+      "title": "Reviewer model",
+      "description": "Model for the background reviewer.",
+      "options": ["sonnet", "opus", "haiku", "inherit"],
+      "default": "sonnet"
+    },
+    "curator_model": {
+      "type": "string",
+      "title": "Curator model",
+      "description": "Model for the weekly curator.",
+      "options": ["sonnet", "opus", "haiku", "inherit"],
+      "default": "opus"
+    },
+    "auto_commit": {
+      "type": "boolean",
+      "title": "Auto-commit",
+      "description": "Commit ~/.peka to its local git history after each review.",
+      "default": true
+    }
+  }
+}

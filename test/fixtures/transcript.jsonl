@@ -1,0 +1,8 @@
+{"type":"user","message":{"role":"user","content":"Please fix the login bug <system-reminder>secret reminder</system-reminder>"}}
+{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"private musing"},{"type":"text","text":"Looking at auth.ts now."},{"type":"tool_use","name":"Bash","input":{"command":"npm test"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"Error: cannot find module x"}]}}
+{"type":"attachment","attachment":{"type":"file","content":"ATTACHMENT BODY"}}
+{"type":"assistant","isSidechain":true,"message":{"content":[{"type":"text","text":"SIDECHAIN TEXT"}]}}
+{"type":"user","message":{"content":[{"type":"text","text":"stop using npm, use pnpm"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Switched to pnpm."}]}}
+not json at all
