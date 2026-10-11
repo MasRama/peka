@@ -44,6 +44,8 @@ recovered by reading the code or git history. Good sources:
   project explicitly, because this store is shared across all projects.
 - **reference**: where things live outside the code: dashboards, tickets, docs, hosts.
 
+A procedure (steps for getting a kind of task done) is a skill, not a memory; see Step 3.
+
 Skip: anything that only mattered to this session, things the repo already records,
 guesses, and anything secret (tokens, passwords, keys, private personal data). If a
 digest contains a secret, never copy it.
@@ -95,8 +97,9 @@ Always write to the real path under `Skills dir`, never to `~/.claude/skills`. I
 related skill exists, improve it instead of creating another.
 
 A skill is guidance, never automation. Do not add the frontmatter keys `hooks`,
-`allowed-tools`, `shell`, or any line starting with `` !` ``. PEKA refuses to save skills
-containing them without the user's approval, which a background agent cannot get.
+`allowed-tools`, `shell`, or anything with `` !` `` or a ```` ```! ```` block. Use only the frontmatter keys `name`, `description`, `when_to_use`, `argument-hint`,
+and `metadata`. PEKA refuses to save other skills without the user's
+approval, which a background agent cannot get.
 
 ## Step 4: Finish
 

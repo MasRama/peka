@@ -16,12 +16,13 @@ import {
   writeJsonAtomic,
 } from "./lib/state.mjs";
 import { applySettings, SettingsParseError } from "./lib/settings.mjs";
-import { ensureRepo } from "./lib/git.mjs";
+import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import { listSkills, syncLinks, writeCuratorReport } from "./lib/skills.mjs";
 import { buildDigest, writeDigest } from "./lib/digest.mjs";
 import { searchTranscripts } from "./lib/search.mjs";
-import { curatorInstruction, reviewerInstruction } from "./lib/prompts.mjs";
+import { curatorInstruction, learnerInstruction, reviewerInstruction } from "./lib/prompts.mjs";
 import { readFrontmatter } from "./lib/frontmatter.mjs";
+import { isExecutableSkill } from "./lib/guard.mjs";
 
 const env = process.env;
 const now = new Date();
@@ -45,6 +46,7 @@ function option(args, name) {
   const i = args.indexOf(name);
   if (i === -1) return undefined;
   const value = args[i + 1];
+  if (value === undefined || value.startsWith("--")) throw new UsageError(`${name} needs a value`);
   args.splice(i, 2);
   return value;
 }
@@ -85,7 +87,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.2", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.3", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -136,6 +138,36 @@ function memoryFiles() {
   }
 }
 
+function unmanagedSkills() {
+  const claudeSkills = path.join(claude, "skills");
+  let entries = [];
+  try {
+    entries = fs.readdirSync(claudeSkills, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(claudeSkills, e.name, "SKILL.md")))
+    .map((e) => ({ name: e.name, ...frontmatterOf(path.join(claudeSkills, e.name, "SKILL.md")) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function bodyOf(file) {
+  try {
+    return fs.readFileSync(file, "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+  } catch {
+    return "";
+  }
+}
+
+function shape(body) {
+  return {
+    numbered: (body.match(/^\s*\d+[.)]\s+\S/gm) ?? []).length,
+    bullets: (body.match(/^\s*[-*]\s+\S/gm) ?? []).length,
+    fence: body.includes("```"),
+  };
+}
+
 function status() {
   if (!isSetUp(d)) return out("PEKA is not set up yet. Run /peka:setup.");
   const usage = loadUsage(d);
@@ -173,6 +205,159 @@ function status() {
     "Open one in full with /peka:status show <name>.",
   );
   if (conflicts.length) out(`Name conflicts (a skill of yours already uses the name, PEKA left it alone): ${conflicts.join(", ")}`);
+  const outside = unmanagedSkills().length;
+  if (outside) out(`Skills outside PEKA: ${outside} (see /peka:audit)`);
+}
+
+function audit() {
+  requireSetup();
+  const sections = [];
+  const add = (title, items) => items.length && sections.push([title, ...items.map((i) => `  - ${i}`)].join("\n"));
+  const memories = memoryFiles().map((file) => ({
+    file,
+    name: file.slice(0, -3),
+    fm: frontmatterOf(path.join(d.memory, file)),
+    body: bodyOf(path.join(d.memory, file)),
+  }));
+  const skills = listSkills(d).map((name) => {
+    const file = path.join(d.skills, name, "SKILL.md");
+    return { name, fm: frontmatterOf(file), body: bodyOf(file), raw: fs.readFileSync(file, "utf8") };
+  });
+
+  add(
+    "Memories that read like procedures (maybe better as skills):",
+    memories
+      .filter((m) => {
+        const sh = shape(m.body);
+        return sh.numbered >= 3 || (sh.fence && sh.numbered + sh.bullets >= 2);
+      })
+      .map((m) => `${m.name} — ${m.fm.description || "(no description)"}`),
+  );
+  add(
+    "Skills that read like plain facts (maybe better as memories):",
+    skills
+      .filter((k) => {
+        const sh = shape(k.body);
+        return sh.numbered + sh.bullets === 0 && !sh.fence && k.body.trim().length < 400;
+      })
+      .map((k) => `${k.name} — ${k.fm.description || "(no description)"}`),
+  );
+  add(
+    "Skills outside PEKA, in ~/.claude/skills (adopt the ones PEKA should manage):",
+    unmanagedSkills().map((k) => `${k.name} — ${k.description || "(no description)"}`),
+  );
+
+  let index = "";
+  try {
+    index = fs.readFileSync(path.join(d.memory, "MEMORY.md"), "utf8");
+  } catch {
+    // No index yet.
+  }
+  const linked = new Set(
+    [...index.matchAll(/\]\(<?([^)\s>]+\.md)>?(?:\s+"[^"]*")?\)/g)]
+      .map((m) => m[1])
+      .filter((target) => !/^[a-z][a-z0-9+.-]*:/i.test(target))
+      .map((target) => path.basename(target)),
+  );
+  add("Memories not in MEMORY.md (Claude will not know they exist):", memories.filter((m) => !linked.has(m.file)).map((m) => m.name));
+  add(
+    "MEMORY.md line that points to a missing file:",
+    [...linked].filter((f) => !memories.some((m) => m.file === f)),
+  );
+  add(
+    "Files with missing frontmatter fields (memories need name, description, type; skills need name, description):",
+    [
+      ...memories.filter((m) => !m.fm.name || !m.fm.description || !m.fm.type).map((m) => `memory ${m.name}`),
+      ...skills.filter((k) => !k.fm.name || !k.fm.description).map((k) => `skill ${k.name}`),
+    ],
+  );
+  add(
+    "PEKA skills that can run commands or grant tools (review them):",
+    skills.filter((k) => isExecutableSkill(k.raw)).map((k) => k.name),
+  );
+
+  if (!sections.length) return out("Nothing to fix: memories and skills are where they belong.");
+  out(sections.join("\n\n"));
+}
+
+function adopt(name) {
+  requireSetup();
+  if (!plainName(name)) throw new Error(`Not a skill name: "${name}".`);
+  const claudeSkills = path.join(claude, "skills");
+  const src = path.join(claudeSkills, name);
+  const st = fs.lstatSync(src, { throwIfNoEntry: false });
+  if (!st) throw new Error(`No skill named "${name}" in ${claudeSkills}.`);
+  if (st.isSymbolicLink()) throw new Error(`${src} is a link, not a skill folder; nothing to adopt.`);
+  if (!st.isDirectory() || !fs.existsSync(path.join(src, "SKILL.md"))) throw new Error(`${src} has no SKILL.md.`);
+  const dest = path.join(d.skills, name);
+  if (fs.existsSync(dest)) throw new Error(`PEKA already has a skill named "${name}". Rename one of them first.`);
+  // PEKA versions its store in git; a nested repo, dependencies, or secrets do not belong there.
+  const unsafe = fs
+    .readdirSync(src, { recursive: true })
+    .map(String)
+    .filter((rel) => rel.split(path.sep).some((part) => part === ".git" || part === "node_modules" || /^\.env(\..*)?$/.test(part)));
+  if (unsafe.length) {
+    throw new Error(`${src} contains ${unsafe.slice(0, 3).join(", ")}; PEKA does not adopt folders with a git repo, node_modules, or .env files. Remove them first or keep this skill where it is.`);
+  }
+  fs.mkdirSync(d.skills, { recursive: true });
+  // Copy beside the store, swap it in, and only then remove the original, so a failure at any
+  // point leaves the skill working where it was.
+  const temp = path.join(d.skills, `.adopt-${name}-${process.pid}`);
+  const backup = `${src}.peka-adopting-${process.pid}`;
+  try {
+    fs.cpSync(src, temp, { recursive: true, verbatimSymlinks: true });
+    fs.renameSync(temp, dest);
+    fs.renameSync(src, backup);
+  } catch (err) {
+    fs.rmSync(temp, { recursive: true, force: true });
+    if (!fs.existsSync(src)) fs.renameSync(backup, src);
+    if (fs.existsSync(src) && fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+    throw err;
+  }
+  syncLinks(d, claudeSkills);
+  if (!fs.lstatSync(src, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    fs.rmSync(src, { force: true });
+    fs.renameSync(backup, src);
+    fs.rmSync(dest, { recursive: true, force: true });
+    throw new Error(`Could not link ${src} back to PEKA; the skill was left where it was.`);
+  }
+  fs.rmSync(backup, { recursive: true, force: true });
+  const usage = loadUsage(d);
+  usage.skills[name] = {
+    ...usage.skills[name],
+    created: now.toISOString(),
+    uses: usage.skills[name]?.uses ?? 0,
+    state: "active",
+    pinned: true,
+  };
+  saveUsage(d, usage);
+  if (cfg.autoCommit) autoCommit(d.home, `peka: adopt skill ${name}`);
+  out(
+    `Adopted ${name}: moved to ${dest} and linked back at ${src}. It works exactly as before.`,
+    `It is pinned, so the curator will not archive it. Run /peka:status unpin ${name} to let PEKA manage it like a learned skill.`,
+  );
+}
+
+const MODES = new Set(["decide", "skill", "memory"]);
+
+function learn(args) {
+  const mode = option(args, "--mode") ?? "decide";
+  const id = option(args, "--session");
+  if (!MODES.has(mode)) throw new UsageError(`--mode must be one of: ${[...MODES].join(", ")}`);
+  if (!id) throw new UsageError("learn needs --session <id>");
+  requireSetup();
+  if (plainName(id)) {
+    // The user is saving by hand, so the next automatic review of the same kind can wait.
+    const s = loadSession(d, id);
+    saveSession(d, id, mode === "skill" ? { ...s, toolsSinceSkill: 0 } : { ...s, turnsSinceMemory: 0 });
+  }
+  let digest = null;
+  const transcript = plainName(id) ? findTranscript(id) : null;
+  if (transcript) {
+    const built = buildDigest(transcript, 0, { maxChars: 30000 });
+    if (built.text) digest = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: built.text, now });
+  }
+  out(learnerInstruction({ digest, mode, d, model: cfg.reviewerModel }));
 }
 
 function show(name) {
@@ -250,6 +435,9 @@ const commands = {
   status,
   where,
   show: () => show(args[0]),
+  audit,
+  adopt: () => adopt(args[0]),
+  learn: () => learn(args),
   pin: () => setPin(args[0], true),
   unpin: () => setPin(args[0], false),
   search: () => search(args),
@@ -262,7 +450,7 @@ try {
   commands[command]();
 } catch (err) {
   if (err instanceof UsageError) {
-    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
+    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | audit | adopt <skill> | learn --session <id> --mode decide|skill|memory | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
     process.exit(2);
   }
   process.stderr.write(`${err instanceof SettingsParseError ? "" : "peka: "}${err.message}\n`);

@@ -22,7 +22,7 @@ import { autoCommit, ensureRepo } from "./git.mjs";
 
 const DAY = 86400000;
 const HOUR = 3600000;
-const PEKA_AGENT = /^peka:(reviewer|curator)$/;
+const PEKA_AGENT = /^peka:(reviewer|curator|learner)$/;
 // Entry points with no one at the keyboard: `claude -p`, the GitHub action, `claude mcp serve`.
 // A checkpoint there would replace the run's real output with a launch message.
 const HEADLESS = new Set(["sdk-cli", "claude-code-github-action", "mcp"]);
@@ -122,6 +122,23 @@ function userPromptExpansion(input, ctx) {
   return null;
 }
 
+// A SKILL.md written into a real directory under ~/.claude/skills bypassed PEKA's store.
+function unmanagedSkillWrite(input, ctx) {
+  const raw = input.tool_input?.file_path;
+  if (input.tool_name !== "Write" || typeof raw !== "string" || path.basename(raw) !== "SKILL.md") return null;
+  const file = path.resolve(expandHome(raw));
+  const parts = path.relative(ctx.claudeSkillsDir, file).split(path.sep);
+  if (parts.length !== 2 || parts[0].startsWith("..")) return null;
+  const st = fs.lstatSync(path.join(ctx.claudeSkillsDir, parts[0]), { throwIfNoEntry: false });
+  if (!st || st.isSymbolicLink() || !st.isDirectory()) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+      additionalContext: `PEKA: this skill was saved outside PEKA, in ${path.dirname(file)}, so it is not versioned, curated, or listed by /peka:status. If it is something learned in this session, tell the user they can move it into PEKA with /peka:audit adopt ${parts[0]}. If the user made it on purpose as their own skill, leave it.`,
+    },
+  };
+}
+
 function postToolUse(input, ctx) {
   const s = loadSession(ctx.d, input.session_id);
   s.toolsSinceSkill += 1;
@@ -137,7 +154,7 @@ function postToolUse(input, ctx) {
   if (input.tool_name === "Skill") used = input.tool_input?.skill;
   else if (input.tool_name === "Read") used = skillNameFromRead(input, ctx);
   recordSkillUse(ctx, used);
-  return null;
+  return unmanagedSkillWrite(input, ctx);
 }
 
 function pekaAgentRunning(input) {
@@ -193,8 +210,8 @@ function plainName(name) {
   return typeof name === "string" && name !== "" && !/[\\/]/.test(name) && !name.includes("..");
 }
 
-function applyCuratorActions(ctx) {
-  const file = path.join(ctx.d.state, "curator-actions.json");
+function applyActions(ctx, role) {
+  const file = path.join(ctx.d.state, `${role}-actions.json`);
   if (!fs.existsSync(file)) return;
   const actions = readJson(file, {});
   fs.rmSync(file, { force: true });
@@ -202,8 +219,13 @@ function applyCuratorActions(ctx) {
   const usage = loadUsage(ctx.d);
   const live = new Set(listSkills(ctx.d));
   const archived = [];
+  const kept = [];
   for (const name of Array.isArray(actions.archiveSkills) ? actions.archiveSkills : []) {
-    if (!plainName(name) || !live.has(name) || usage.skills[name]?.pinned) continue;
+    if (!plainName(name) || !live.has(name)) continue;
+    if (usage.skills[name]?.pinned) {
+      kept.push(name);
+      continue;
+    }
     archiveSkill(ctx.d, name, ctx.now, usage);
     archived.push(name);
   }
@@ -222,7 +244,10 @@ function applyCuratorActions(ctx) {
     fs.renameSync(target, dest);
     retired.push(name);
   }
-  log(ctx.d, `curator actions: archived skills [${archived.join(", ")}], archived memories [${retired.join(", ")}]`);
+  log(
+    ctx.d,
+    `${role} actions: archived skills [${archived.join(", ")}], kept pinned [${kept.join(", ")}], archived memories [${retired.join(", ")}]`,
+  );
 }
 
 function pruneDigests(ctx) {
@@ -243,8 +268,8 @@ function subagentStop(input, ctx) {
   const match = typeof input.agent_type === "string" && input.agent_type.match(PEKA_AGENT);
   if (!match) return null;
   const role = match[1];
+  if (role !== "reviewer") applyActions(ctx, role);
   if (role === "curator") {
-    applyCuratorActions(ctx);
     const c = loadCurator(ctx.d);
     c.lastRunAt = ctx.now.toISOString();
     saveCurator(ctx.d, c);

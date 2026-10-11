@@ -71,7 +71,7 @@
     ],
     "SubagentStop": [
       {
-        "matcher": "^peka:(reviewer|curator)$",
+        "matcher": "^peka:(reviewer|curator|learner)$",
         "hooks": [
           {
             "type": "command",

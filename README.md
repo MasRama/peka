@@ -12,7 +12,8 @@ You keep working; nothing asks for approval. Everything stays on your machine, i
 Markdown, with git history.
 
 - **Global memory.** One store in `~/.peka`, loaded into every session in every project.
-- **Remembers on purpose.** Say `/peka:remember …` and it is saved immediately.
+- **Remembers on purpose.** Say `/peka:remember …` or `/peka:skill …` and it is filed
+  immediately, as a memory or a skill, whichever fits.
 - **Learns by itself.** Memories and reusable skills are written by a background
   reviewer while you work.
 - **Keeps itself tidy.** A weekly curator merges duplicates, fixes the index, and
@@ -61,8 +62,10 @@ Start a new session afterwards.
 ```
 
 1. **Briefing.** Each session starts with a short note telling Claude its memory is
-   global, to check the index before a task, and to save corrections right away
-   (`/peka:remember` does the same on demand).
+   global, to check the index before a task, and to hand anything you teach it to
+   `/peka:remember` right away. That command passes it to the `peka:learner` agent,
+   which decides whether it is a memory (a fact or preference) or a skill (a
+   procedure) and files it without duplicates.
 2. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls
    since it last saved a skill.
 3. **Checkpoint.** When a counter reaches its interval (10 turns / 20 tool calls by
@@ -81,14 +84,22 @@ PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so 
 background agents do not trigger permission prompts. That shortcut is limited on
 purpose:
 
-- Only PEKA's own reviewer and curator get it. When Claude in your main session writes a
-  PEKA skill, you are asked as usual.
-- A skill containing `hooks`, `allowed-tools`, `shell`, or `` !` `` command lines is never
-  saved without your approval, because those make a skill run commands or pre-approve
-  tools.
+- Only PEKA's own agents (reviewer, curator, learner) get it. When Claude in your main
+  session writes a PEKA skill itself, you are asked as usual.
+- A skill is saved without asking only if its frontmatter sticks to `name`,
+  `description`, `when_to_use`, `argument-hint`, `metadata`, `license`, and `version`, and
+  it has no `` !` `` or ```` ```! ```` command blocks. Anything else (`hooks`,
+  `allowed-tools`, `shell`, `model`, `context`, ...) can make a skill run commands or
+  pre-approve tools, so you are asked. Edits are judged by the file they produce.
 
 If you already have a skill with the same name, PEKA leaves yours alone and reports the
 conflict in `/peka:status`.
+
+If Claude writes a skill straight into `~/.claude/skills` instead, PEKA notices and
+suggests `/peka:audit adopt <name>`, which moves it into PEKA and leaves a link so it
+keeps working. Adopted skills are pinned, so the curator never archives them. Folders
+holding a `.git`, `node_modules`, or `.env` are not adopted, since PEKA's store is a git
+repo.
 
 ### Commands
 
@@ -98,7 +109,10 @@ conflict in `/peka:status`.
 | `/peka:status` | every memory and skill PEKA has, with descriptions and usage |
 | `/peka:status show <name>` | open one memory or skill in full |
 | `/peka:status pin <skill>` | never mark this skill stale or archive it (`unpin` to undo) |
-| `/peka:remember <what>` | save something to memory right now |
+| `/peka:remember <what>` | keep something now; PEKA decides memory or skill |
+| `/peka:skill <what>` | save a procedure as a reusable skill |
+| `/peka:audit` | find knowledge in the wrong place and fix it |
+| `/peka:audit adopt <skill>` | move a skill from `~/.claude/skills` into PEKA |
 | `/peka:search <terms>` | search your past sessions in all projects |
 | `/peka:review` | learn from the current session now |
 | `/peka:curate` | tidy memory and skills now |

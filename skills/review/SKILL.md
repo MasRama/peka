@@ -11,7 +11,7 @@ allowed-tools:
 Run:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" review --session ${CLAUDE_SESSION_ID}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" review --session "${CLAUDE_SESSION_ID}"
 ```
 
 If it succeeds, follow the instruction it prints exactly: launch the named agent in the
