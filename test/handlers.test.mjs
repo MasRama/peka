@@ -253,3 +253,11 @@ test("SubagentStop respects auto_commit off", () => {
   handle("SubagentStop", { session_id: "s1", agent_id: "r", agent_type: "peka:reviewer" }, ctx);
   assert.match(dirty(ctx.d.home), /learned\.md/);
 });
+
+test("SessionStart saves the effective config for the CLI", () => {
+  const ctx = make({ env: { CLAUDE_PLUGIN_OPTION_CURATOR_MODEL: "sonnet" } });
+  const saved = JSON.parse(fs.readFileSync(path.join(ctx.d.state, "config.json"), "utf8"));
+  assert.equal(saved.curatorModel, "sonnet");
+  assert.equal(saved.reviewerModel, "sonnet");
+  assert.equal(saved.memoryInterval, 10);
+});

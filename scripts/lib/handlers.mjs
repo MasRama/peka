@@ -9,14 +9,15 @@ import {
   loadUsage,
   log,
   readJson,
-  safeId,
   saveCurator,
   saveSession,
   saveUsage,
+  writeJsonAtomic,
 } from "./state.mjs";
 import { classify, isInside, resolveReal } from "./guard.mjs";
 import { applyLifecycle, archiveSkill, listSkills, recordUse, syncLinks, writeCuratorReport } from "./skills.mjs";
-import { buildDigest } from "./digest.mjs";
+import { buildDigest, writeDigest } from "./digest.mjs";
+import { curatorInstruction, reviewerInstruction } from "./prompts.mjs";
 import { autoCommit, ensureRepo } from "./git.mjs";
 
 const DAY = 86400000;
@@ -45,10 +46,6 @@ function context(event, text) {
   return { hookSpecificOutput: { hookEventName: event, additionalContext: text } };
 }
 
-function modelLine(model) {
-  return model === "inherit" ? "Do not set a model; let it inherit." : `Set model: "${model}".`;
-}
-
 function sync(ctx) {
   const r = syncLinks(ctx.d, ctx.claudeSkillsDir);
   if (r.conflicts.length) log(ctx.d, `skill name conflicts in ${ctx.claudeSkillsDir}: ${r.conflicts.join(", ")}`);
@@ -62,6 +59,8 @@ function commit(ctx, message) {
 function sessionStart(ctx) {
   ensureDirs(ctx.d);
   ensureRepo(ctx.d.home);
+  // Plugin options only reach hooks; the CLI reads them from here.
+  writeJsonAtomic(path.join(ctx.d.state, "config.json"), ctx.cfg);
   const curator = loadCurator(ctx.d);
   if (since(ctx.now, curator.lastLifecycleAt) >= DAY) {
     const usage = loadUsage(ctx.d);
@@ -143,10 +142,7 @@ function reviewPrompt(input, ctx, s) {
   const digest = buildDigest(transcript, s.lastDigestLine, { lastAssistantMessage: input.last_assistant_message });
   if (!digest.text) return null;
 
-  const file = path.join(ctx.d.digests, `${safeId(input.session_id)}-${stamp(ctx.now)}.md`);
-  const header = [`# Session digest`, ``, `Session: ${input.session_id ?? "unknown"}`, `Project: ${input.cwd ?? "unknown"}`, ``, ``].join("\n");
-  fs.mkdirSync(ctx.d.digests, { recursive: true });
-  fs.writeFileSync(file, header + digest.text + "\n");
+  const file = writeDigest(ctx.d, { sessionId: input.session_id, cwd: input.cwd, text: digest.text, now: ctx.now });
 
   if (memoryDue) s.turnsSinceMemory = 0;
   if (skillDue) s.toolsSinceSkill = 0;
@@ -154,20 +150,7 @@ function reviewPrompt(input, ctx, s) {
   saveSession(ctx.d, input.session_id, s);
 
   const focus = memoryDue && skillDue ? "memory and skills" : memoryDue ? "memory" : "skills";
-  return context(
-    "Stop",
-    [
-      `PEKA learning checkpoint. Launch the \`peka:reviewer\` agent now with run_in_background: true. ${modelLine(ctx.cfg.reviewerModel)}`,
-      `Do not review the session yourself and do not wait for the agent. Give it exactly this prompt:`,
-      ``,
-      `Digest: ${file}`,
-      `Focus: ${focus}`,
-      `Memory dir: ${ctx.d.memory}`,
-      `Skills dir: ${ctx.d.skills}`,
-      ``,
-      `After launching it, end your turn without further output.`,
-    ].join("\n"),
-  );
+  return context("Stop", reviewerInstruction({ digest: file, focus, d: ctx.d, model: ctx.cfg.reviewerModel }));
 }
 
 function curatorPrompt(ctx) {
@@ -183,20 +166,7 @@ function curatorPrompt(ctx) {
   const report = writeCuratorReport(ctx.d, loadUsage(ctx.d), ctx.now);
   c.lastPromptAt = ctx.now.toISOString();
   saveCurator(ctx.d, c);
-  return context(
-    "Stop",
-    [
-      `PEKA maintenance is due. Launch the \`peka:curator\` agent now with run_in_background: true. ${modelLine(ctx.cfg.curatorModel)}`,
-      `Do not do the maintenance yourself and do not wait for the agent. Give it exactly this prompt:`,
-      ``,
-      `Report: ${report}`,
-      `Actions file: ${path.join(ctx.d.state, "curator-actions.json")}`,
-      `Memory dir: ${ctx.d.memory}`,
-      `Skills dir: ${ctx.d.skills}`,
-      ``,
-      `After launching it, end your turn without further output.`,
-    ].join("\n"),
-  );
+  return context("Stop", curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel }));
 }
 
 function stop(input, ctx) {

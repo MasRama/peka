@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import path from "node:path";
+import { safeId } from "./state.mjs";
 
 const OMITTED = "[… earlier part of the session omitted …]";
 const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
@@ -20,7 +22,7 @@ function blockText(content) {
     .join("\n");
 }
 
-function entriesFor(record) {
+export function entriesFor(record) {
   if (!record || typeof record !== "object" || record.isSidechain) return [];
   const content = record.message?.content;
   const out = [];
@@ -103,4 +105,13 @@ export function buildDigest(transcriptPath, fromLine, { maxChars = 60000, lastAs
     if (entries.at(-1) !== entry) entries.push(entry);
   }
   return { text: keepTail(entries, maxChars), toLine: lines.length };
+}
+
+export function writeDigest(d, { sessionId, cwd, text, now }) {
+  const stamp = now.toISOString().replace(/[-:.TZ]/g, "");
+  const file = path.join(d.digests, `${safeId(sessionId)}-${stamp}.md`);
+  const header = ["# Session digest", "", `Session: ${sessionId ?? "unknown"}`, `Project: ${cwd ?? "unknown"}`, "", ""].join("\n");
+  fs.mkdirSync(d.digests, { recursive: true });
+  fs.writeFileSync(file, `${header}${text}\n`);
+  return file;
 }
