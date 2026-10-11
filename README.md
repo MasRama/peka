@@ -107,6 +107,14 @@ conflict in `/peka:status`.
   session. Look through `~/.peka/memory` now and then, and do not add a remote to
   `~/.peka` unless you are comfortable with its contents leaving your machine.
 
+## Terms of use
+
+PEKA is built only from features Claude Code provides for this purpose: plugins, hooks,
+subagents, skills, and auto memory. It does not read or reuse your login or API
+credentials, does not call any Anthropic API itself, does not start `claude -p` or the
+Agent SDK, and does not share your account with another app. Reviews run inside your own
+Claude Code session, under the same terms as everything else you do there.
+
 ## Cost
 
 The reviewer and curator are ordinary Claude Code subagents running in your session, so
@@ -131,9 +139,11 @@ Environment variables:
 
 - `PEKA_HOME`: keep the store somewhere other than `~/.peka`, then run `/peka:setup`
   again.
-- `PEKA_DISABLE=1`: turn PEKA off for that process. Use it for scripted runs such as
-  `PEKA_DISABLE=1 claude -p "…"`, where a checkpoint would otherwise interrupt the
-  script's output.
+- `PEKA_DISABLE=1`: turn PEKA off completely for that process.
+
+PEKA never starts a review or curator run in a session with no one at the keyboard
+(`claude -p`, the GitHub action, `claude mcp serve`), so scripts get their normal output.
+If you drive Claude Code from your own Agent SDK script, set `PEKA_DISABLE=1` for it.
 
 ## Uninstall
 

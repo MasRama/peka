@@ -304,3 +304,17 @@ test("launch instructions keep the main agent quiet and handle inherit", () => {
   assert.doesNotMatch(text, /Do not set a model/);
   assert.match(text, /When the agent finishes, do not comment on it/);
 });
+
+test("headless runs never get a checkpoint, interactive hosts still do", () => {
+  for (const entrypoint of ["sdk-cli", "claude-code-github-action", "mcp"]) {
+    const ctx = make({ env: { CLAUDE_CODE_ENTRYPOINT: entrypoint } });
+    saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 20, lastDigestLine: 0 });
+    assert.equal(handle("Stop", stopInput(), ctx), null, entrypoint);
+    assert.equal(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 30 * DAY))), null, `${entrypoint} curator`);
+  }
+  for (const entrypoint of ["cli", "sdk-ts", "claude-vscode", undefined]) {
+    const ctx = make({ env: entrypoint ? { CLAUDE_CODE_ENTRYPOINT: entrypoint } : {} });
+    saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 0, lastDigestLine: 0 });
+    assert.ok(handle("Stop", stopInput(), ctx), String(entrypoint));
+  }
+});

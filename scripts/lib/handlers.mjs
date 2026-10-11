@@ -23,6 +23,9 @@ import { autoCommit, ensureRepo } from "./git.mjs";
 const DAY = 86400000;
 const HOUR = 3600000;
 const PEKA_AGENT = /^peka:(reviewer|curator)$/;
+// Entry points with no one at the keyboard: `claude -p`, the GitHub action, `claude mcp serve`.
+// A checkpoint there would replace the run's real output with a launch message.
+const HEADLESS = new Set(["sdk-cli", "claude-code-github-action", "mcp"]);
 
 export function contextFrom(env = process.env, now = new Date()) {
   return {
@@ -179,6 +182,7 @@ function curatorPrompt(ctx) {
 
 function stop(input, ctx) {
   if (input.stop_hook_active || pekaAgentRunning(input)) return null;
+  if (HEADLESS.has(ctx.env?.CLAUDE_CODE_ENTRYPOINT)) return null;
   const s = loadSession(ctx.d, input.session_id);
   return reviewPrompt(input, ctx, s) ?? curatorPrompt(ctx);
 }
