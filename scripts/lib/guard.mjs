@@ -37,13 +37,44 @@ function throughPekaLink(abs, d, claudeSkillsDir) {
   }
 }
 
-const PEKA_AGENTS = new Set(["peka:reviewer", "peka:curator"]);
-// Skill frontmatter or body that can run commands or pre-approve tools. A skill carrying any
-// of these is executable configuration, so it goes through Claude Code's normal prompt.
-const EXECUTABLE = /^\s*(hooks|allowed-tools|shell)\s*:|^\s*!`/m;
+const PEKA_AGENTS = new Set(["peka:reviewer", "peka:curator", "peka:learner"]);
+const ACTION_FILES = new Map([
+  ["peka:curator", "curator-actions.json"],
+  ["peka:learner", "learner-actions.json"],
+]);
+// Frontmatter keys a learned skill may carry. Anything else (hooks, allowed-tools, shell, model,
+// context, agent, quoted or flow-style keys) can change what the skill does when it runs.
+const PLAIN_KEYS = new Set(["name", "description", "when_to_use", "argument-hint", "metadata", "license", "version"]);
 
-function writtenText(toolInput) {
-  return [toolInput?.content, toolInput?.new_string].filter((t) => typeof t === "string").join("\n");
+// True when a skill file can run commands, pre-approve tools, or change how it runs. Such a
+// skill is executable configuration, so it goes through Claude Code's normal prompt.
+export function isExecutableSkill(text) {
+  if (text.includes("!`") || /^\s*(`{3,}|~{3,})\s*!/m.test(text)) return true;
+  const lines = text.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return false;
+  const end = lines.indexOf("---", 1);
+  if (end === -1) return true;
+  for (const line of lines.slice(1, end)) {
+    if (!line.trim() || /^\s/.test(line) || line.startsWith("#")) continue;
+    const key = line.match(/^([A-Za-z0-9_-]+)\s*:/)?.[1];
+    if (!key || !PLAIN_KEYS.has(key)) return true;
+  }
+  return false;
+}
+
+// The skill file as it will be after this Write or Edit, or null if that cannot be known.
+function resultingText(toolName, toolInput, file) {
+  if (toolName === "Write") return typeof toolInput?.content === "string" ? toolInput.content : null;
+  const { old_string: from, new_string: to, replace_all: all } = toolInput ?? {};
+  if (typeof from !== "string" || typeof to !== "string" || !from) return null;
+  let current;
+  try {
+    current = fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  if (!current.includes(from)) return null;
+  return all ? current.split(from).join(to) : current.replace(from, () => to);
 }
 
 export function classify(toolName, toolInput, d, claudeSkillsDir, agentType) {
@@ -71,11 +102,12 @@ export function classify(toolName, toolInput, d, claudeSkillsDir, agentType) {
   }
   if (real.endsWith(".md") && isInside(real, memory)) return { decision: "allow", kind: "memory" };
   if (real.endsWith(".md") && isInside(real, skills)) {
-    const safe = PEKA_AGENTS.has(agentType) && !EXECUTABLE.test(writtenText(toolInput));
-    return { decision: safe ? "allow" : null, kind: "skill" };
+    const text = PEKA_AGENTS.has(agentType) ? resultingText(toolName, toolInput, real) : null;
+    return { decision: text !== null && !isExecutableSkill(text) ? "allow" : null, kind: "skill" };
   }
-  if (real === path.join(resolveReal(d.state), "curator-actions.json")) {
-    return { decision: agentType === "peka:curator" ? "allow" : null, kind: "state" };
+  const state = resolveReal(d.state);
+  if (path.dirname(real) === state && /^(curator|learner)-actions\.json$/.test(path.basename(real))) {
+    return { decision: ACTION_FILES.get(agentType) === path.basename(real) ? "allow" : null, kind: "state" };
   }
   return { decision: null };
 }

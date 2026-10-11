@@ -18,17 +18,21 @@ function frontmatter(file) {
   return { fields, body: text.slice(m[0].length) };
 }
 
-const agents = ["reviewer", "curator"];
-const skills = ["setup", "search", "status", "review", "curate", "remember"];
+const agents = ["reviewer", "curator", "learner"];
+const skills = ["setup", "search", "status", "review", "curate", "remember", "skill", "audit"];
 
-test("agents declare name, description, model, background and no Bash", () => {
-  const models = { reviewer: "sonnet", curator: "opus" };
+test("agents declare name, description, model, and no Bash", () => {
+  const expected = {
+    reviewer: { model: "sonnet", background: "true" },
+    curator: { model: "opus", background: "true" },
+    learner: { model: "sonnet", background: undefined },
+  };
   for (const name of agents) {
     const { fields, body } = frontmatter(path.join(root, "agents", `${name}.md`));
     assert.equal(fields.name, name);
     assert.ok(fields.description.length > 20);
-    assert.equal(fields.model, models[name]);
-    assert.equal(fields.background, "true");
+    assert.equal(fields.model, expected[name].model, name);
+    assert.equal(fields.background, expected[name].background, name);
     assert.equal(fields.tools, "Read, Write, Edit, Glob, Grep");
     assert.ok(body.trim().length > 200);
   }
@@ -52,7 +56,7 @@ test("hooks.json registers every event through the entrypoint", () => {
     PreToolUse: "Write|Edit|Read|Glob|Grep",
     PostToolUse: "*",
     Stop: undefined,
-    SubagentStop: "^peka:(reviewer|curator)$",
+    SubagentStop: "^peka:(reviewer|curator|learner)$",
   };
   assert.deepEqual(Object.keys(hooks).sort(), Object.keys(expected).sort());
   for (const [event, matcher] of Object.entries(expected)) {
@@ -66,9 +70,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.2");
+  assert.equal(pkg.version, "0.1.3");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.2/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.3/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);

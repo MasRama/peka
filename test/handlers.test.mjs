@@ -82,7 +82,7 @@ test("SessionStart briefs Claude to use the global memory", () => {
     assert.ok(text.includes(ctx.d.memory), source);
     assert.match(text, /global/);
     assert.match(text, /MEMORY\.md/);
-    assert.match(text, /save it right away/);
+    assert.match(text, /right away/);
     assert.match(text, /\/peka:remember/);
     assert.ok(text.length < 1500, `brief is ${text.length} chars`);
   }
@@ -332,4 +332,43 @@ test("headless runs never get a checkpoint, interactive hosts still do", () => {
     saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 0, lastDigestLine: 0 });
     assert.ok(handle("Stop", stopInput(), ctx), String(entrypoint));
   }
+});
+
+test("SubagentStop for the learner applies its actions without counting as a curator run", () => {
+  const ctx = make();
+  fs.writeFileSync(path.join(ctx.d.memory, "deploy-steps.md"), "1. a\n2. b\n3. c\n");
+  fs.writeFileSync(path.join(ctx.d.state, "learner-actions.json"), JSON.stringify({ deleteMemories: ["deploy-steps.md"] }));
+  fs.writeFileSync(path.join(ctx.d.state, "curator-actions.json"), JSON.stringify({ deleteMemories: ["keep.md"] }));
+  fs.writeFileSync(path.join(ctx.d.memory, "keep.md"), "x");
+  addSkill(ctx, "deploy");
+  handle("SubagentStop", { session_id: "s1", agent_id: "l", agent_type: "peka:learner" }, ctx);
+  assert.equal(fs.existsSync(path.join(ctx.d.memory, "deploy-steps.md")), false);
+  assert.ok(fs.existsSync(path.join(ctx.d.home, "archive", "memory", "deploy-steps.md")));
+  assert.ok(fs.existsSync(path.join(ctx.d.memory, "keep.md")), "the curator's pending actions are not the learner's");
+  assert.ok(fs.existsSync(path.join(ctx.d.state, "curator-actions.json")));
+  assert.ok(fs.lstatSync(path.join(ctx.claudeSkillsDir, "deploy")).isSymbolicLink());
+  assert.equal(dirty(ctx.d.home), "");
+  assert.equal(loadCurator(ctx.d).lastRunAt, null);
+});
+
+test("a skill written straight into ~/.claude/skills gets flagged", () => {
+  const ctx = make();
+  const dir = path.join(ctx.claudeSkillsDir, "deploy-staging");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "SKILL.md"), "---\nname: deploy-staging\ndescription: d\n---\n");
+  const out = handle("PostToolUse", { session_id: "s1", tool_name: "Write", tool_input: { file_path: path.join(dir, "SKILL.md") } }, ctx);
+  assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
+  assert.match(out.hookSpecificOutput.additionalContext, /outside PEKA/);
+  assert.match(out.hookSpecificOutput.additionalContext, /\/peka:audit adopt deploy-staging/);
+  assert.equal(handle("PostToolUse", { session_id: "s1", tool_name: "Read", tool_input: { file_path: path.join(dir, "SKILL.md") } }, ctx), null);
+  assert.equal(handle("PostToolUse", { session_id: "s1", tool_name: "Write", tool_input: { file_path: path.join(dir, "notes.md") } }, ctx), null);
+});
+
+test("the session brief routes teaching through PEKA", () => {
+  const ctx = make();
+  const text = handle("SessionStart", { session_id: "a" }, ctx).hookSpecificOutput.additionalContext;
+  assert.match(text, /\/peka:remember/);
+  assert.match(text, /\/peka:skill/);
+  assert.match(text, /do not write skills into ~\/\.claude\/skills unless the user asks for a personal skill there/i);
+  assert.match(text, /correct.*save.*memory.*yourself/i);
 });

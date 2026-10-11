@@ -224,3 +224,106 @@ test("show prints a memory or skill in full and rejects paths", () => {
   assert.equal(s.run("show", "../state/setup").status, 1);
   assert.equal(s.run("show").status, 2);
 });
+
+test("learn prepares a digest and the learner launch instruction", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  const dir = path.join(s.claude, "projects", "-work-a");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(fixture, path.join(dir, "sess-1.jsonl"));
+  for (const mode of ["decide", "skill"]) {
+    const r = s.run("learn", "--session", "sess-1", "--mode", mode);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /peka:learner/);
+    assert.match(r.stdout, new RegExp(`Mode: ${mode}`));
+    assert.match(r.stdout, /Request: /);
+    assert.match(fs.readFileSync(r.stdout.match(/Digest: (\S+)/)[1], "utf8"), /stop using npm/);
+  }
+  const sess = () => JSON.parse(fs.readFileSync(path.join(s.home, "state", "sessions", "sess-1.json"), "utf8"));
+  assert.equal(sess().toolsSinceSkill, 0);
+  assert.equal(sess().lastDigestLine, 0, "the next review still sees the whole conversation");
+  fs.writeFileSync(path.join(s.home, "state", "sessions", "sess-1.json"), JSON.stringify({ turnsSinceMemory: 7, toolsSinceSkill: 9, lastDigestLine: 0 }));
+  s.run("learn", "--session", "sess-1", "--mode", "decide");
+  assert.deepEqual(sess(), { turnsSinceMemory: 0, toolsSinceSkill: 9, lastDigestLine: 0 });
+  assert.match(s.run("learn", "--session", "sess-1", "--mode", "decide").stdout, /learner-actions\.json/);
+  assert.equal(s.run("learn", "--session", "--mode", "skill").status, 2, "a missing id must not swallow the next flag");
+  const none = s.run("learn", "--session", "missing", "--mode", "decide");
+  assert.equal(none.status, 0, none.stderr);
+  assert.match(none.stdout, /Digest: none/);
+  assert.equal(s.run("learn", "--session", "x", "--mode", "bogus").status, 2);
+});
+
+test("audit reports misplaced knowledge and store problems", () => {
+  const s = sandbox();
+  seedStore(s);
+  const mem = path.join(s.home, "memory");
+  fs.writeFileSync(
+    path.join(mem, "deploy-howto.md"),
+    "---\nname: deploy-howto\ndescription: how to deploy\nmetadata:\n  type: reference\n---\n1. build\n2. upload\n3. restart pm2\n",
+  );
+  fs.appendFileSync(path.join(mem, "MEMORY.md"), "- [Gone](gone.md) — missing file\n- [Docs](https://example.com/README.md) — external\n- [Titled](deploy-howto.md \"t\") — titled link\n");
+  fs.mkdirSync(path.join(s.home, "skills", "api-port"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, "skills", "api-port", "SKILL.md"), "---\nname: api-port\ndescription: API port\n---\nThe API listens on 8080.\n");
+  const own = path.join(s.claude, "skills", "my-own");
+  fs.mkdirSync(own, { recursive: true });
+  fs.writeFileSync(path.join(own, "SKILL.md"), "---\nname: my-own\ndescription: mine\n---\n");
+  const r = s.run("audit");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Memories that read like procedures[\s\S]*deploy-howto/);
+  assert.match(r.stdout, /Skills that read like plain facts[\s\S]*api-port/);
+  assert.match(r.stdout, /Skills outside PEKA[\s\S]*my-own — mine/);
+  assert.match(r.stdout, /not in MEMORY\.md[\s\S]*loose/);
+  assert.match(r.stdout, /points to a missing file[\s\S]*gone\.md/);
+  assert.match(r.stdout, /missing frontmatter fields[\s\S]*loose/);
+  assert.doesNotMatch(r.stdout, /Skills that read like plain facts[^\n]*\n[^\n]*deploy-api/);
+  assert.doesNotMatch(r.stdout, /README\.md/);
+  assert.doesNotMatch(r.stdout, /not in MEMORY\.md[^\n]*\n(  - [^\n]*\n)*  - deploy-howto/);
+});
+
+test("audit of a tidy store says so", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  assert.match(s.run("audit").stdout, /Nothing to fix/);
+});
+
+test("adopt moves a skill from ~/.claude/skills into PEKA and links it back", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  const own = path.join(s.claude, "skills", "deploy-staging");
+  fs.mkdirSync(own, { recursive: true });
+  fs.writeFileSync(path.join(own, "SKILL.md"), "---\nname: deploy-staging\ndescription: d\n---\nsteps\n");
+  const r = s.run("adopt", "deploy-staging");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /pinned/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(s.home, "state", "usage.json"), "utf8")).skills["deploy-staging"].pinned, true);
+  assert.equal(fs.readFileSync(path.join(s.home, "skills", "deploy-staging", "SKILL.md"), "utf8").includes("steps"), true);
+  assert.ok(fs.lstatSync(own).isSymbolicLink());
+  assert.equal(fs.readFileSync(path.join(own, "SKILL.md"), "utf8").includes("steps"), true);
+  assert.equal(s.run("adopt", "deploy-staging").status, 1, "already a PEKA link");
+  assert.equal(s.run("adopt", "missing").status, 1);
+  assert.equal(s.run("adopt", "../etc").status, 1);
+  fs.mkdirSync(path.join(s.claude, "skills", "clash"), { recursive: true });
+  fs.writeFileSync(path.join(s.claude, "skills", "clash", "SKILL.md"), "x");
+  fs.mkdirSync(path.join(s.home, "skills", "clash"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, "skills", "clash", "SKILL.md"), "peka");
+  assert.equal(s.run("adopt", "clash").status, 1);
+  assert.equal(fs.readFileSync(path.join(s.claude, "skills", "clash", "SKILL.md"), "utf8"), "x");
+  for (const extra of [".git", "node_modules", ".env"]) {
+    const dir = path.join(s.claude, "skills", `has${extra.replace(".", "-")}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), "x");
+    if (extra === ".env") fs.writeFileSync(path.join(dir, extra), "SECRET=1");
+    else fs.mkdirSync(path.join(dir, extra));
+    const res = s.run("adopt", path.basename(dir));
+    assert.equal(res.status, 1, extra);
+    assert.ok(fs.lstatSync(dir).isDirectory() && !fs.lstatSync(dir).isSymbolicLink(), extra);
+  }
+});
+
+test("status mentions skills outside PEKA", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  fs.mkdirSync(path.join(s.claude, "skills", "mine"), { recursive: true });
+  fs.writeFileSync(path.join(s.claude, "skills", "mine", "SKILL.md"), "---\nname: mine\ndescription: m\n---\n");
+  assert.match(s.run("status").stdout, /Skills outside PEKA: 1 \(see \/peka:audit\)/);
+});

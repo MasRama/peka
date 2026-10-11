@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.3
+
+- New `peka:learner` agent: `/peka:remember` now hands what you teach to it, and it
+  decides whether that becomes a memory, a skill, or both, updating instead of
+  duplicating.
+- `/peka:skill <what>` saves a procedure as a reusable skill in PEKA's store.
+- `/peka:audit` finds procedures saved as memories, facts saved as skills, skills saved
+  outside PEKA, and index problems, and fixes what you approve.
+- `/peka:audit adopt <skill>` moves a skill from `~/.claude/skills` into PEKA and links
+  it back. Adopted skills are pinned; folders with `.git`, `node_modules`, or `.env` are
+  refused; a failed adoption leaves the skill where it was.
+- Claude is warned on the spot when it writes a skill straight into `~/.claude/skills`.
+- `/peka:status` counts skills outside PEKA.
+- Saving by hand resets the matching automatic-review counter.
+- Stricter check before PEKA's agents save a skill without asking: only plain frontmatter
+  keys, no `` !` `` or ```` ```! ```` command blocks, and edits are judged by the
+  resulting file.
+- The learner and curator each get their own actions file.
+
 ## 0.1.2
 
 - `/peka:status` lists every memory (with its type and description) and every skill
