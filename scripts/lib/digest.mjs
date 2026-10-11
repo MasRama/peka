@@ -3,14 +3,15 @@ import path from "node:path";
 import { safeId } from "./state.mjs";
 
 const OMITTED = "[… earlier part of the session omitted …]";
-const REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+// Text Claude Code injects into user turns; none of it is the user speaking.
+const INJECTED = /<(system-reminder|task-notification|local-command-caveat|local-command-stdout)>[\s\S]*?<\/\1>/g;
 
 function clip(text, max) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
 function clean(text) {
-  return typeof text === "string" ? text.replace(REMINDER, "").trim() : "";
+  return typeof text === "string" ? text.replace(INJECTED, "").trim() : "";
 }
 
 function blockText(content) {
@@ -28,6 +29,7 @@ export function entriesFor(record) {
   const out = [];
 
   if (record.type === "user") {
+    if (record.isMeta || record.isCompactSummary || record.promptSource === "system") return out;
     if (typeof content === "string") {
       const text = clean(content);
       if (text) out.push(`USER: ${text}`);

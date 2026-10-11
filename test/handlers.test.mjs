@@ -261,3 +261,46 @@ test("SessionStart saves the effective config for the CLI", () => {
   assert.equal(saved.reviewerModel, "sonnet");
   assert.equal(saved.memoryInterval, 10);
 });
+
+test("PEKA_DISABLE turns every hook off", () => {
+  const ctx = make({ env: { PEKA_DISABLE: "1" } });
+  saveSession(ctx.d, "s1", { turnsSinceMemory: 50, toolsSinceSkill: 50, lastDigestLine: 0 });
+  assert.equal(handle("Stop", stopInput(), ctx), null);
+  assert.equal(handle("SessionStart", { session_id: "a" }, ctx), null);
+  handle("UserPromptSubmit", { session_id: "s1" }, ctx);
+  assert.equal(loadSession(ctx.d, "s1").turnsSinceMemory, 50);
+});
+
+test("a skill the user types as /name counts as used", () => {
+  const ctx = make();
+  addSkill(ctx, "deploy");
+  const expand = (name) => handle("UserPromptExpansion", { session_id: "s1", expansion_type: "slash_command", command_name: name, prompt: `/${name}` }, ctx);
+  assert.equal(expand("deploy"), null);
+  expand("peka:status");
+  assert.equal(loadUsage(ctx.d).skills.deploy.uses, 1);
+  assert.equal(loadUsage(ctx.d).skills["peka:status"], undefined);
+});
+
+test("PreToolUse passes the agent type to the guard", () => {
+  const ctx = make();
+  const input = (agent_type) => ({ session_id: "s1", agent_id: agent_type ? "a1" : undefined, agent_type, tool_name: "Write", tool_input: { file_path: path.join(ctx.d.skills, "n", "SKILL.md"), content: "---\nname: n\ndescription: d\n---\n" } });
+  assert.equal(handle("PreToolUse", input("peka:reviewer"), ctx).hookSpecificOutput.permissionDecision, "allow");
+  assert.equal(handle("PreToolUse", input(undefined), ctx), null);
+});
+
+test("PostToolUse still resets the skill counter when the user approved a skill write", () => {
+  const ctx = make();
+  saveSession(ctx.d, "s1", { turnsSinceMemory: 0, toolsSinceSkill: 7, lastDigestLine: 0 });
+  addSkill(ctx, "mine");
+  handle("PostToolUse", { session_id: "s1", tool_name: "Write", tool_input: { file_path: path.join(ctx.d.skills, "mine", "SKILL.md") } }, ctx);
+  assert.equal(loadSession(ctx.d, "s1").toolsSinceSkill, 0);
+});
+
+test("launch instructions keep the main agent quiet and handle inherit", () => {
+  const ctx = make({ env: { CLAUDE_PLUGIN_OPTION_REVIEWER_MODEL: "inherit" } });
+  saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 0, lastDigestLine: 0 });
+  const text = handle("Stop", stopInput(), ctx).hookSpecificOutput.additionalContext;
+  assert.match(text, /same model you are running on/);
+  assert.doesNotMatch(text, /Do not set a model/);
+  assert.match(text, /When the agent finishes, do not comment on it/);
+});

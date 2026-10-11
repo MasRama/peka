@@ -47,6 +47,9 @@ export function applySettings(file, { memoryDir, minCleanupDays = 365 }, { dryRu
     backup = `${file}.peka-backup-${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
     fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL);
   }
-  writeJsonAtomic(file, data);
+  // Write to the real file so a settings.json symlinked from a dotfiles repo stays a link.
+  const target = exists ? fs.realpathSync(file) : file;
+  const mode = exists ? fs.statSync(target).mode & 0o777 : 0o644;
+  writeJsonAtomic(target, data, mode);
   return { changes, backup };
 }

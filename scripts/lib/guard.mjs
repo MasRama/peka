@@ -37,7 +37,16 @@ function throughPekaLink(abs, d, claudeSkillsDir) {
   }
 }
 
-export function classify(toolName, toolInput, d, claudeSkillsDir) {
+const PEKA_AGENTS = new Set(["peka:reviewer", "peka:curator"]);
+// Skill frontmatter or body that can run commands or pre-approve tools. A skill carrying any
+// of these is executable configuration, so it goes through Claude Code's normal prompt.
+const EXECUTABLE = /^\s*(hooks|allowed-tools|shell)\s*:|^\s*!`/m;
+
+function writtenText(toolInput) {
+  return [toolInput?.content, toolInput?.new_string].filter((t) => typeof t === "string").join("\n");
+}
+
+export function classify(toolName, toolInput, d, claudeSkillsDir, agentType) {
   const raw = toolInput?.file_path ?? toolInput?.path;
   if (typeof raw !== "string" || !raw) return { decision: null };
   const isWrite = WRITE_TOOLS.has(toolName);
@@ -61,7 +70,12 @@ export function classify(toolName, toolInput, d, claudeSkillsDir) {
     return isInside(real, resolveReal(d.home)) ? { decision: "allow", kind: "read" } : { decision: null };
   }
   if (real.endsWith(".md") && isInside(real, memory)) return { decision: "allow", kind: "memory" };
-  if (real.endsWith(".md") && isInside(real, skills)) return { decision: "allow", kind: "skill" };
-  if (real === path.join(resolveReal(d.state), "curator-actions.json")) return { decision: "allow", kind: "state" };
+  if (real.endsWith(".md") && isInside(real, skills)) {
+    const safe = PEKA_AGENTS.has(agentType) && !EXECUTABLE.test(writtenText(toolInput));
+    return { decision: safe ? "allow" : null, kind: "skill" };
+  }
+  if (real === path.join(resolveReal(d.state), "curator-actions.json")) {
+    return { decision: agentType === "peka:curator" ? "allow" : null, kind: "state" };
+  }
   return { decision: null };
 }

@@ -104,3 +104,18 @@ test("autoCommit falls back to the PEKA identity when none is configured", () =>
     else process.env.GIT_CONFIG_NOSYSTEM = saved.s;
   }
 });
+
+test("applySettings writes through a symlinked settings file and keeps its mode", () => {
+  const dir = tmp("peka-settings-");
+  const dotfiles = path.join(dir, "dotfiles");
+  fs.mkdirSync(dotfiles);
+  const real = path.join(dotfiles, "settings.json");
+  fs.writeFileSync(real, JSON.stringify({ theme: "dark" }));
+  fs.chmodSync(real, 0o600);
+  const link = path.join(dir, "settings.json");
+  fs.symlinkSync(real, link);
+  applySettings(link, { memoryDir: "/m" });
+  assert.ok(fs.lstatSync(link).isSymbolicLink());
+  assert.equal(JSON.parse(fs.readFileSync(real, "utf8")).autoMemoryDirectory, "/m");
+  assert.equal(fs.statSync(real).mode & 0o777, 0o600);
+});

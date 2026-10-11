@@ -55,3 +55,19 @@ test("digest ignores a partially written last line", () => {
 test("digest of a missing file is empty", () => {
   assert.deepEqual(buildDigest("/nonexistent/t.jsonl", 3), { text: "", toLine: 3 });
 });
+
+test("digest leaves out injected records that are not the user speaking", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "peka-digest-"));
+  const file = path.join(dir, "t.jsonl");
+  const rows = [
+    { type: "user", message: { content: "real request" } },
+    { type: "user", isMeta: true, message: { content: [{ type: "text", text: "Base directory for this skill: SKILL BODY" }] } },
+    { type: "user", isCompactSummary: true, message: { content: "This session is being continued SUMMARY" } },
+    { type: "user", promptSource: "system", message: { content: "SYSTEM PROMPT" } },
+    { type: "user", message: { content: "<task-notification><task-id>x</task-id>NOTIFY</task-notification>" } },
+    { type: "user", message: { content: "<local-command-caveat>CAVEAT</local-command-caveat><local-command-stdout>STDOUT</local-command-stdout>" } },
+  ];
+  fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const { text } = buildDigest(file, 0);
+  assert.equal(text, "USER: real request");
+});

@@ -84,7 +84,7 @@ function userPromptSubmit(input, ctx) {
 }
 
 function preToolUse(input, ctx) {
-  const r = classify(input.tool_name, input.tool_input, ctx.d, ctx.claudeSkillsDir);
+  const r = classify(input.tool_name, input.tool_input, ctx.d, ctx.claudeSkillsDir, input.agent_type);
   if (!r.decision) return null;
   return {
     hookSpecificOutput: {
@@ -105,6 +105,18 @@ function skillNameFromRead(input, ctx) {
   return parts.length === 2 ? parts[0] : null;
 }
 
+function recordSkillUse(ctx, name) {
+  if (typeof name !== "string" || !listSkills(ctx.d).includes(name)) return;
+  const usage = loadUsage(ctx.d);
+  recordUse(usage, name, ctx.now.toISOString());
+  saveUsage(ctx.d, usage);
+}
+
+function userPromptExpansion(input, ctx) {
+  recordSkillUse(ctx, input.command_name);
+  return null;
+}
+
 function postToolUse(input, ctx) {
   const s = loadSession(ctx.d, input.session_id);
   s.toolsSinceSkill += 1;
@@ -119,11 +131,7 @@ function postToolUse(input, ctx) {
   let used = null;
   if (input.tool_name === "Skill") used = input.tool_input?.skill;
   else if (input.tool_name === "Read") used = skillNameFromRead(input, ctx);
-  if (typeof used === "string" && listSkills(ctx.d).includes(used)) {
-    const usage = loadUsage(ctx.d);
-    recordUse(usage, used, ctx.now.toISOString());
-    saveUsage(ctx.d, usage);
-  }
+  recordSkillUse(ctx, used);
   return null;
 }
 
@@ -243,6 +251,7 @@ function subagentStop(input, ctx) {
 
 export function handle(event, input, ctx) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  if (/^(1|true|yes)$/i.test(ctx.env?.PEKA_DISABLE ?? "")) return null;
   if (!isSetUp(ctx.d)) {
     return event === "SessionStart"
       ? { systemMessage: "PEKA is installed but not set up yet. Run /peka:setup to turn on global memory and learning." }
@@ -254,6 +263,8 @@ export function handle(event, input, ctx) {
       return sessionStart(ctx);
     case "UserPromptSubmit":
       return mainAgent ? userPromptSubmit(input, ctx) : null;
+    case "UserPromptExpansion":
+      return mainAgent ? userPromptExpansion(input, ctx) : null;
     case "PreToolUse":
       return preToolUse(input, ctx);
     case "PostToolUse":

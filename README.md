@@ -65,7 +65,8 @@ Start a new session afterwards.
    default), PEKA writes a compact digest of the recent conversation and asks Claude to
    launch the `peka:reviewer` agent in the background.
 3. **Review.** The reviewer reads the digest and your existing memory, then saves or
-   updates memories and skills. It can only read and edit files; it cannot run commands.
+   updates memories and skills. It has no shell access: it can only read files and edit
+   files inside `~/.peka`.
 4. **Commit.** When the reviewer finishes, PEKA links new skills into
    `~/.claude/skills` and commits `~/.peka` to its local git repository.
 5. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
@@ -73,8 +74,17 @@ Start a new session afterwards.
    archived after 30, unless you pin them.
 
 PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so the
-background agents never trigger permission prompts. If you already have a skill with the
-same name, PEKA leaves yours alone and reports the conflict in `/peka:status`.
+background agents do not trigger permission prompts. That shortcut is limited on
+purpose:
+
+- Only PEKA's own reviewer and curator get it. When Claude in your main session writes a
+  PEKA skill, you are asked as usual.
+- A skill containing `hooks`, `allowed-tools`, `shell`, or `` !` `` command lines is never
+  saved without your approval, because those make a skill run commands or pre-approve
+  tools.
+
+If you already have a skill with the same name, PEKA leaves yours alone and reports the
+conflict in `/peka:status`.
 
 ### Commands
 
@@ -117,8 +127,13 @@ Set when you enable the plugin, and editable later in `/config`:
 | `curator_model` | `opus` | `sonnet`, `opus`, `haiku`, or `inherit` |
 | `auto_commit` | `true` | commit `~/.peka` after each review |
 
-Set the environment variable `PEKA_HOME` to keep the store somewhere other than
-`~/.peka`, then run `/peka:setup` again.
+Environment variables:
+
+- `PEKA_HOME`: keep the store somewhere other than `~/.peka`, then run `/peka:setup`
+  again.
+- `PEKA_DISABLE=1`: turn PEKA off for that process. Use it for scripted runs such as
+  `PEKA_DISABLE=1 claude -p "…"`, where a checkpoint would otherwise interrupt the
+  script's output.
 
 ## Uninstall
 

@@ -9,10 +9,11 @@ export function readJson(file, fallback) {
   }
 }
 
-export function writeJsonAtomic(file, data) {
+export function writeJsonAtomic(file, data, mode = 0o644) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode });
+  fs.chmodSync(tmp, mode);
   fs.renameSync(tmp, file);
 }
 

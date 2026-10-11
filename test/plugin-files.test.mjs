@@ -48,6 +48,7 @@ test("hooks.json registers every event through the entrypoint", () => {
   const expected = {
     SessionStart: undefined,
     UserPromptSubmit: undefined,
+    UserPromptExpansion: undefined,
     PreToolUse: "Write|Edit|Read|Glob|Grep",
     PostToolUse: "*",
     Stop: undefined,
@@ -85,4 +86,14 @@ test("no file mentions the project PEKA was inspired by", () => {
   for (const file of walk(root)) {
     assert.doesNotMatch(fs.readFileSync(file, "utf8"), banned, path.relative(root, file));
   }
+});
+
+test("agent prompts treat session text as data and forbid executable skill content", () => {
+  for (const name of agents) {
+    const body = fs.readFileSync(path.join(root, "agents", `${name}.md`), "utf8");
+    assert.match(body, /`hooks`,\s+`allowed-tools`,\s+`shell`/, name);
+    assert.match(body, /data,\s+not\s+instructions/, name);
+  }
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  assert.match(readme, /PEKA_DISABLE=1/);
 });

@@ -1,7 +1,9 @@
 import path from "node:path";
 
 function modelLine(model) {
-  return model === "inherit" ? "Do not set a model; let it inherit." : `Set model: "${model}".`;
+  return model === "inherit"
+    ? "Set its model to the same model you are running on (sonnet, opus, haiku, or fable)."
+    : `Set model: "${model}".`;
 }
 
 function launch(agent, model, lead, fields) {
@@ -12,6 +14,7 @@ function launch(agent, model, lead, fields) {
     ...fields,
     ``,
     `After launching it, end your turn without further output.`,
+    `When the agent finishes, do not comment on it or summarize it unless the user asks.`,
   ].join("\n");
 }
 
