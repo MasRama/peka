@@ -134,7 +134,7 @@ test("writeCuratorReport lists skills and memory stats", () => {
   const usage = { skills: { deploy: { uses: 4, lastUsed: "2026-01-02T00:00:00.000Z", state: "active", pinned: true } } };
   const file = writeCuratorReport(d, usage, new Date("2026-01-10T00:00:00Z"));
   const text = fs.readFileSync(file, "utf8");
-  assert.match(text, /\| deploy \| 4 \| 2026-01-02 \| active \| yes \|/);
+  assert.match(text, /\| deploy \| 4 \| 2026-01-02 \| active \| yes \| — \| 8 \|/);
   assert.match(text, /Memory files: 2/);
   assert.match(text, /MEMORY\.md lines: 2/);
 });
@@ -202,4 +202,42 @@ test("a skill tagged with a project never seen is never staled by age", () => {
   const usage = { skills: { deploy: { created: t0.toISOString(), uses: 0, state: "active" } } };
   const r = applyLifecycle(d, usage, new Date(t0.getTime() + 365 * DAY), cfg, {});
   assert.deepEqual(r.stale.concat(r.archived), []);
+});
+
+test("missingPaths reports local paths that do not exist and skips remote ones", async () => {
+  const { missingPaths } = await import("../scripts/lib/skills.mjs");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "peka-home-"));
+  fs.mkdirSync(path.join(home, "real", "dir"), { recursive: true });
+  const text = [
+    `Build in ${home}/real/dir, then copy to ${home}/gone/dir.`,
+    "Notes live in ~/real/dir and ~/missing/notes.md;",
+    "Docs: https://example.com/a/b and git@github.com:/org/repo",
+    "Deploy with ssh admin@host, then cd /srv/app/current",
+    "Config is (/etc/peka-nope/x.json).",
+    "Single segment /tmp is ignored.",
+  ].join("\n");
+  assert.deepEqual(missingPaths(text, home), [`${home}/gone/dir`, "~/missing/notes.md", "/etc/peka-nope/x.json"]);
+});
+
+test("writeCuratorReport adds projects, age, untagged candidates, missing paths, and overflow", () => {
+  const { d } = setup();
+  const home = path.dirname(d.home);
+  addProjectSkill(d, "portal-deploy", "wajom-portal");
+  addProjectSkill(d, "ghost-deploy", "never-opened");
+  addSkill(d, "abqary-export");
+  fs.writeFileSync(path.join(d.state, "projects.json"), JSON.stringify({ "wajom-portal": { activeDays: [] }, "abqary-new": { activeDays: [] } }));
+  fs.writeFileSync(
+    path.join(d.memory, "billing.md"),
+    `---\nname: billing\ndescription: abqary-new billing\nmetadata:\n  type: project\n---\nSee ${home}/no-such-dir/x.\n`,
+  );
+  fs.writeFileSync(path.join(d.memory, "tagged.md"), "---\nname: tagged\ndescription: about abqary-new\nmetadata:\n  project: abqary-new\n---\n");
+  fs.writeFileSync(path.join(d.skills, "abqary-export", "SKILL.md"), "---\nname: abqary-export\ndescription: export in abqary-new\n---\n");
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z"), { overflow: 3 }), "utf8");
+  assert.match(text, /\| Skill \| Uses \| Last used \| State \| Pinned \| Project \| Age \(days\) \|/);
+  assert.match(text, /\| portal-deploy \| 0 \| never \| active \| no \| wajom-portal \| 0 \|/);
+  assert.match(text, /## Project tags with no recorded activity\n\n- never-opened/);
+  assert.match(text, /## Untagged memories and skills that mention a known project\n\n- memory billing\.md: abqary-new\n- skill abqary-export: abqary-new/);
+  assert.doesNotMatch(text, /memory tagged\.md/);
+  assert.match(text, new RegExp(`## Memories mentioning missing local paths\\n\\n- billing\\.md: ${home}/no-such-dir/x`));
+  assert.match(text, /MEMORY\.md overflow: 3 global memories did not fit/);
 });
