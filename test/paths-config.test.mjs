@@ -45,7 +45,14 @@ test("loadConfig defaults", () => {
     curatorIntervalDays: 7,
     staleAfterDays: 14,
     archiveAfterDays: 30,
+    learningNotice: "weekly",
   });
+});
+
+test("loadConfig reads learning_notice and falls back to weekly", () => {
+  assert.equal(loadConfig({ CLAUDE_PLUGIN_OPTION_LEARNING_NOTICE: "each" }).learningNotice, "each");
+  assert.equal(loadConfig({ CLAUDE_PLUGIN_OPTION_LEARNING_NOTICE: "OFF" }).learningNotice, "off");
+  assert.equal(loadConfig({ CLAUDE_PLUGIN_OPTION_LEARNING_NOTICE: "daily" }).learningNotice, "weekly");
 });
 
 test("loadConfig parses options", () => {

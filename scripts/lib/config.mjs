@@ -1,4 +1,5 @@
 const MODELS = new Set(["sonnet", "opus", "haiku", "inherit"]);
+const NOTICES = new Set(["weekly", "each", "off"]);
 
 function option(env, key) {
   const value = env[`CLAUDE_PLUGIN_OPTION_${key}`];
@@ -12,6 +13,11 @@ function interval(raw, fallback) {
 
 function model(raw, fallback) {
   return raw && MODELS.has(raw.toLowerCase()) ? raw.toLowerCase() : fallback;
+}
+
+function notice(raw) {
+  const v = raw?.toLowerCase();
+  return v && NOTICES.has(v) ? v : "weekly";
 }
 
 function bool(raw, fallback) {
@@ -32,5 +38,6 @@ export function loadConfig(env = process.env) {
     curatorIntervalDays: 7,
     staleAfterDays: 14,
     archiveAfterDays: 30,
+    learningNotice: notice(option(env, "LEARNING_NOTICE")),
   };
 }
