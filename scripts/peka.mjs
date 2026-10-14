@@ -7,6 +7,7 @@ import { loadConfig } from "./lib/config.mjs";
 import {
   isSetUp,
   loadCurator,
+  loadProjects,
   loadSession,
   loadUsage,
   readJson,
@@ -17,11 +18,14 @@ import {
 } from "./lib/state.mjs";
 import { applySettings, SettingsParseError } from "./lib/settings.mjs";
 import { autoCommit, ensureRepo } from "./lib/git.mjs";
-import { listSkills, syncLinks, writeCuratorReport } from "./lib/skills.mjs";
+import { listSkills, skillAge, skillProjects, syncLinks, untaggedCandidates, writeCuratorReport } from "./lib/skills.mjs";
 import { buildDigest, writeDigest } from "./lib/digest.mjs";
 import { searchTranscripts } from "./lib/search.mjs";
 import { curatorInstruction, learnerInstruction, reviewerInstruction } from "./lib/prompts.mjs";
-import { readFrontmatter } from "./lib/frontmatter.mjs";
+import { projectsOf, readFrontmatter } from "./lib/frontmatter.mjs";
+import { buildIndex } from "./lib/memory-index.mjs";
+import { projectOf } from "./lib/project.mjs";
+import { changesSince } from "./lib/changes.mjs";
 import { isExecutableSkill } from "./lib/guard.mjs";
 
 const env = process.env;
@@ -87,7 +91,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.3", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.4", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -168,6 +172,32 @@ function shape(body) {
   };
 }
 
+// Skills under a "Global" heading, then one heading per project (a skill with several
+// projects is listed under its first).
+function skillGroups(skills, usage, conflicts) {
+  const projects = loadProjects(d);
+  const groups = new Map([["Global", []]]);
+  for (const name of skills) {
+    const key = skillProjects(d, name)[0] ?? "Global";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(name);
+  }
+  const ordered = [...groups].filter(([, list]) => list.length).sort(([a], [b]) => (a === "Global" ? -1 : b === "Global" ? 1 : a.localeCompare(b)));
+  return ordered.flatMap(([heading, list]) => [
+    `  ${heading}:`,
+    ...list.map((name) => {
+      const fm = frontmatterOf(path.join(d.skills, name, "SKILL.md"));
+      const u = usage.skills[name] ?? {};
+      const age = heading !== "Global" && (u.created || u.lastUsed) ? `${Math.floor(skillAge(d, name, u, now, projects))} active days since last use` : null;
+      const flags = [u.state ?? "active", u.pinned ? "pinned" : null, conflicts.includes(name) ? "name conflict" : null, age];
+      return [
+        `  - ${name} — ${fm.description || "(no description)"}`,
+        `    ${u.uses ?? 0} uses, last ${(u.lastUsed ?? "never").slice(0, 10)}, ${flags.filter(Boolean).join(", ")}`,
+      ].join("\n");
+    }),
+  ]);
+}
+
 function status() {
   if (!isSetUp(d)) return out("PEKA is not set up yet. Run /peka:setup.");
   const usage = loadUsage(d);
@@ -186,19 +216,12 @@ function status() {
     `Memories: ${memories.length} (${d.memory})`,
     ...memories.map((file) => {
       const fm = frontmatterOf(path.join(d.memory, file));
-      return `  - ${file.slice(0, -3)} [${fm.type || "?"}] — ${fm.description || "(no description)"}`;
+      const tags = projectsOf(fm);
+      return `  - ${file.slice(0, -3)} [${fm.type || "?"}]${tags.length ? ` (${tags.join(", ")})` : ""} — ${fm.description || "(no description)"}`;
     }),
     "",
     `Skills: ${skills.length} (${d.skills})`,
-    ...skills.map((name) => {
-      const fm = frontmatterOf(path.join(d.skills, name, "SKILL.md"));
-      const u = usage.skills[name] ?? {};
-      const flags = [u.state ?? "active", u.pinned ? "pinned" : null, conflicts.includes(name) ? "name conflict" : null];
-      return [
-        `  - ${name} — ${fm.description || "(no description)"}`,
-        `    ${u.uses ?? 0} uses, last ${(u.lastUsed ?? "never").slice(0, 10)}, ${flags.filter(Boolean).join(", ")}`,
-      ].join("\n");
-    }),
+    ...skillGroups(skills, usage, conflicts),
     "",
     `Curator: last run ${curator.lastRunAt ?? "never"}`,
     `Review every ${cfg.memoryInterval} turns (memory) / ${cfg.skillInterval} tool calls (skills); reviewer ${cfg.reviewerModel}, curator ${cfg.curatorModel}, auto-commit ${cfg.autoCommit ? "on" : "off"}`,
@@ -211,6 +234,8 @@ function status() {
 
 function audit() {
   requireSetup();
+  // The index is generated, so rebuild it rather than report drift.
+  buildIndex(d);
   const sections = [];
   const add = (title, items) => items.length && sections.push([title, ...items.map((i) => `  - ${i}`)].join("\n"));
   const memories = memoryFiles().map((file) => ({
@@ -247,23 +272,7 @@ function audit() {
     unmanagedSkills().map((k) => `${k.name} — ${k.description || "(no description)"}`),
   );
 
-  let index = "";
-  try {
-    index = fs.readFileSync(path.join(d.memory, "MEMORY.md"), "utf8");
-  } catch {
-    // No index yet.
-  }
-  const linked = new Set(
-    [...index.matchAll(/\]\(<?([^)\s>]+\.md)>?(?:\s+"[^"]*")?\)/g)]
-      .map((m) => m[1])
-      .filter((target) => !/^[a-z][a-z0-9+.-]*:/i.test(target))
-      .map((target) => path.basename(target)),
-  );
-  add("Memories not in MEMORY.md (Claude will not know they exist):", memories.filter((m) => !linked.has(m.file)).map((m) => m.name));
-  add(
-    "MEMORY.md line that points to a missing file:",
-    [...linked].filter((f) => !memories.some((m) => m.file === f)),
-  );
+  add("Memories and skills that mention a known project but have no project tag:", untaggedCandidates(d));
   add(
     "Files with missing frontmatter fields (memories need name, description, type; skills need name, description):",
     [
@@ -357,7 +366,9 @@ function learn(args) {
     const built = buildDigest(transcript, 0, { maxChars: 30000 });
     if (built.text) digest = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: built.text, now });
   }
-  out(learnerInstruction({ digest, mode, d, model: cfg.reviewerModel }));
+  const saved = plainName(id) ? loadSession(d, id).project : undefined;
+  const project = saved !== undefined ? saved : projectOf(process.cwd());
+  out(learnerInstruction({ digest, mode, d, model: cfg.reviewerModel, project }));
 }
 
 function show(name) {
@@ -416,16 +427,35 @@ function review(args) {
   if (!digest.text) throw new Error("This session has nothing to review yet.");
   const file = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: digest.text, now });
   saveSession(d, id, { ...s, turnsSinceMemory: 0, toolsSinceSkill: 0, lastDigestLine: digest.toLine });
-  out(reviewerInstruction({ digest: file, focus: "memory and skills", d, model: cfg.reviewerModel }));
+  const project = s.project !== undefined ? s.project : projectOf(process.cwd());
+  out(reviewerInstruction({ digest: file, focus: "memory and skills", d, model: cfg.reviewerModel, project }));
 }
 
 function curate() {
   requireSetup();
-  const report = writeCuratorReport(d, loadUsage(d), now);
+  const { overflow } = buildIndex(d);
+  const report = writeCuratorReport(d, loadUsage(d), now, { overflow });
   const c = loadCurator(d);
   c.lastPromptAt = now.toISOString();
   saveCurator(d, c);
   out(curatorInstruction({ report, d, model: cfg.curatorModel }));
+}
+
+function history(raw) {
+  requireSetup();
+  if (raw !== undefined && !/^\d+$/.test(raw)) throw new UsageError("log takes a number of days");
+  const days = Math.min(Math.max(Number(raw ?? 7), 1), 365);
+  if (!fs.existsSync(path.join(d.home, ".git"))) {
+    return out(`PEKA's change log needs git and auto-commit; ${d.home} has no git history.`);
+  }
+  const commits = changesSince(d.home, null, { since: new Date(now.getTime() - days * 86400000) }).filter((c) => c.items.length);
+  if (!cfg.autoCommit) out("Auto-commit is off, so recent changes may not be in the history yet; PEKA's change log needs git and auto-commit.");
+  if (!commits.length) return out(`No changes to memories or skills in the last ${days} days.`);
+  out(`PEKA changes in the last ${days} days:`, "");
+  for (const c of commits) {
+    out(`${c.date.slice(0, 10)} ${c.sha.slice(0, 7)} ${c.subject}`, ...c.items.map((i) => `  - ${i.kind} ${i.name} ${i.status}`));
+  }
+  out("", `Undo a change with: git -C ${d.home} revert <hash>`);
 }
 
 const [command, ...args] = process.argv.slice(2);
@@ -443,6 +473,7 @@ const commands = {
   search: () => search(args),
   review: () => review(args),
   curate,
+  log: () => history(args[0]),
 };
 
 try {
@@ -450,7 +481,7 @@ try {
   commands[command]();
 } catch (err) {
   if (err instanceof UsageError) {
-    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | audit | adopt <skill> | learn --session <id> --mode decide|skill|memory | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate\n`);
+    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | audit | adopt <skill> | learn --session <id> --mode decide|skill|memory | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate | log [days]\n`);
     process.exit(2);
   }
   process.stderr.write(`${err instanceof SettingsParseError ? "" : "peka: "}${err.message}\n`);

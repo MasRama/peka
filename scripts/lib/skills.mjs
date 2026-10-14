@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isInside } from "./guard.mjs";
+import { projectsOf, readFrontmatter } from "./frontmatter.mjs";
+import { loadProjects, localDate } from "./state.mjs";
+import { readMemories } from "./memory-index.mjs";
+import { expandHome } from "./paths.mjs";
 
 const DAY = 86400000;
 
@@ -87,7 +91,29 @@ export function archiveSkill(d, name, now, usage) {
   return dest;
 }
 
-export function applyLifecycle(d, usage, now, cfg) {
+export function skillProjects(d, name) {
+  try {
+    return projectsOf(readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8")));
+  } catch {
+    return [];
+  }
+}
+
+// Days a skill has gone unused. A project skill only ages on days one of its projects was
+// worked on, so a rarely needed procedure survives while its project sits idle.
+export function skillAge(d, name, entry, now, projects) {
+  const since = new Date(entry.lastUsed ?? entry.created);
+  const tags = skillProjects(d, name);
+  if (!tags.length) return (now.getTime() - since.getTime()) / DAY;
+  const after = localDate(since);
+  const days = new Set();
+  for (const p of tags) {
+    for (const day of projects[p]?.activeDays ?? []) if (day > after) days.add(day);
+  }
+  return days.size;
+}
+
+export function applyLifecycle(d, usage, now, cfg, projects = loadProjects(d)) {
   const result = { stale: [], archived: [], reactivated: [] };
   for (const name of listSkills(d)) {
     const entry = (usage.skills[name] ??= {});
@@ -98,7 +124,7 @@ export function applyLifecycle(d, usage, now, cfg) {
       continue;
     }
     if (entry.pinned) continue;
-    const ageDays = (now.getTime() - Date.parse(entry.lastUsed ?? entry.created)) / DAY;
+    const ageDays = skillAge(d, name, entry, now, projects);
     if (ageDays >= cfg.archiveAfterDays) {
       archiveSkill(d, name, now, usage);
       result.archived.push(name);
@@ -131,12 +157,95 @@ function memoryStats(d) {
   return { files: files.length, indexLines };
 }
 
-export function writeCuratorReport(d, usage, now) {
-  const rows = listSkills(d).map((name) => {
+const PATH_TOKEN = /(?<![\w:@/.~-])(~\/[^\s`'"()<>[\]]+|\/[\w.-]+(?:\/[^\s`'"()<>[\]]*)+)/g;
+const MAX_MISSING = 50;
+
+// Local paths a memory mentions that no longer exist. Lines about ssh, URLs, and host:path
+// forms are skipped, since those paths live on other machines.
+export function missingPaths(text, home) {
+  const found = [];
+  for (const line of String(text).split("\n")) {
+    if (/\bssh\b/i.test(line)) continue;
+    for (const [token] of line.matchAll(PATH_TOKEN)) {
+      const p = token.replace(/[.,;:!?'"`)\]]+$/, "");
+      if (p.split("/").filter(Boolean).length < 2) continue;
+      const abs = p.startsWith("~/") ? path.join(home, p.slice(2)) : p;
+      if (!fs.existsSync(abs) && !found.includes(p)) found.push(p);
+    }
+  }
+  return found;
+}
+
+function bodyOf(text) {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
+
+function mentions(text, project) {
+  const escaped = project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "i").test(text);
+}
+
+function section(title, items) {
+  return items.length ? ["", `## ${title}`, "", ...items.map((i) => `- ${i}`)] : [];
+}
+
+function storeItems(d) {
+  const skills = listSkills(d).map((name) => {
+    let raw = "";
+    try {
+      raw = fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8");
+    } catch {
+      // Listed skills have a SKILL.md; a race just leaves it empty.
+    }
+    return { name, raw, tags: projectsOf(readFrontmatter(raw)) };
+  });
+  const memories = readMemories(d).map((m) => {
+    let raw = "";
+    try {
+      raw = fs.readFileSync(path.join(d.memory, m.file), "utf8");
+    } catch {
+      // Unreadable: nothing to check.
+    }
+    return { ...m, raw };
+  });
+  return { skills, memories };
+}
+
+function knownProjects(d, { skills, memories }) {
+  const tagged = new Set([...skills.flatMap((k) => k.tags), ...memories.flatMap((m) => m.projects)]);
+  return { tagged, known: [...new Set([...Object.keys(loadProjects(d)), ...tagged])].sort() };
+}
+
+// Untagged memories and skills that name a project PEKA knows: candidates for a project tag.
+export function untaggedCandidates(d, items = storeItems(d)) {
+  const { known } = knownProjects(d, items);
+  return [
+    ...items.memories.filter((m) => !m.projects.length).map((m) => ({ label: `memory ${m.file}`, text: m.raw })),
+    ...items.skills.filter((k) => !k.tags.length).map((k) => ({ label: `skill ${k.name}`, text: k.raw })),
+  ]
+    .map(({ label, text }) => ({ label, hits: known.filter((p) => mentions(text, p)) }))
+    .filter((x) => x.hits.length)
+    .map((x) => `${x.label}: ${x.hits.join(", ")}`);
+}
+
+export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandHome("~") } = {}) {
+  const projects = loadProjects(d);
+  const items = storeItems(d);
+  const { skills, memories } = items;
+
+  const rows = skills.map(({ name, tags }) => {
     const u = usage.skills[name] ?? {};
     const last = (u.lastUsed ?? "").slice(0, 10) || "never";
-    return `| ${name} | ${u.uses ?? 0} | ${last} | ${u.state ?? "active"} | ${u.pinned ? "yes" : "no"} |`;
+    const age = u.created || u.lastUsed ? Math.floor(skillAge(d, name, u, now, projects)) : 0;
+    return `| ${name} | ${u.uses ?? 0} | ${last} | ${u.state ?? "active"} | ${u.pinned ? "yes" : "no"} | ${tags.join(", ") || "—"} | ${age} |`;
   });
+
+  const { tagged } = knownProjects(d, items);
+  const untagged = untaggedCandidates(d, items);
+  const missing = memories
+    .flatMap((m) => missingPaths(bodyOf(m.raw), home).map((p) => `${m.file}: ${p}`))
+    .slice(0, MAX_MISSING);
+
   const stats = memoryStats(d);
   const text = [
     `# PEKA curator report (${now.toISOString().slice(0, 10)})`,
@@ -145,10 +254,19 @@ export function writeCuratorReport(d, usage, now) {
     `Memory dir: ${d.memory}`,
     `Memory files: ${stats.files}`,
     `MEMORY.md lines: ${stats.indexLines}`,
+    ...(overflow ? [`MEMORY.md overflow: ${overflow} global memories did not fit; merge or tag some.`] : []),
     "",
-    "| Skill | Uses | Last used | State | Pinned |",
-    "|---|---|---|---|---|",
-    ...(rows.length ? rows : ["| (none) | | | | |"]),
+    "Age is calendar days since last use for global skills, and days the project was worked on for project skills.",
+    "",
+    "| Skill | Uses | Last used | State | Pinned | Project | Age (days) |",
+    "|---|---|---|---|---|---|---|",
+    ...(rows.length ? rows : ["| (none) | | | | | | |"]),
+    ...section(
+      "Project tags with no recorded activity",
+      [...tagged].filter((p) => !projects[p]).sort(),
+    ),
+    ...section("Untagged memories and skills that mention a known project", untagged),
+    ...section("Memories mentioning missing local paths", missing),
     "",
   ].join("\n");
   const file = path.join(d.state, "curator-report.md");

@@ -1,15 +1,19 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { claudeHome, dirs, ensureDirs, expandHome, pekaHome } from "./paths.mjs";
 import { loadConfig } from "./config.mjs";
 import {
   isSetUp,
   loadCurator,
+  loadNotice,
   loadSession,
   loadUsage,
   log,
+  markActive,
   readJson,
   saveCurator,
+  saveNotice,
   saveSession,
   saveUsage,
   writeJsonAtomic,
@@ -19,6 +23,9 @@ import { applyLifecycle, archiveSkill, listSkills, recordUse, syncLinks, writeCu
 import { buildDigest, writeDigest } from "./digest.mjs";
 import { curatorInstruction, reviewerInstruction, sessionBrief } from "./prompts.mjs";
 import { autoCommit, ensureRepo } from "./git.mjs";
+import { buildIndex } from "./memory-index.mjs";
+import { projectOf } from "./project.mjs";
+import { changesSince, commitExists, describe, headCommit, mergeItems, summarize } from "./changes.mjs";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -34,6 +41,7 @@ export function contextFrom(env = process.env, now = new Date()) {
     d: dirs(pekaHome(env)),
     cfg: loadConfig(env),
     claudeSkillsDir: path.join(claudeHome(env), "skills"),
+    userHome: env.HOME?.trim() || os.homedir(),
   };
 }
 
@@ -59,11 +67,43 @@ function commit(ctx, message) {
   if (ctx.cfg.autoCommit) autoCommit(ctx.d.home, message);
 }
 
-function sessionStart(ctx) {
+// The session's project, worked out once from its directory and kept in the session state.
+function sessionProject(ctx, input, s) {
+  if (s.project !== undefined) return s.project;
+  s.project = projectOf(input.cwd, { home: ctx.userHome });
+  return s.project;
+}
+
+// Once a week, one line on what PEKA saved since the last notice. The first call only seeds.
+function weeklyNotice(ctx) {
+  if (ctx.cfg.learningNotice !== "weekly") return null;
+  const n = loadNotice(ctx.d);
+  const head = headCommit(ctx.d.home);
+  const reseed = () => saveNotice(ctx.d, { lastNoticeAt: ctx.now.toISOString(), lastNoticeCommit: head });
+  if (!n.lastNoticeAt) return reseed(), null;
+  if (since(ctx.now, n.lastNoticeAt) < 7 * DAY) return null;
+  if (n.lastNoticeCommit && !commitExists(ctx.d.home, n.lastNoticeCommit)) return reseed(), null;
+  const commits = n.lastNoticeCommit
+    ? changesSince(ctx.d.home, n.lastNoticeCommit)
+    : changesSince(ctx.d.home, null, { since: new Date(n.lastNoticeAt) });
+  reseed();
+  const text = summarize(mergeItems(commits));
+  return text ? `PEKA this week: ${text}. Details: /peka:status log` : null;
+}
+
+function sessionStart(input, ctx) {
   ensureDirs(ctx.d);
   ensureRepo(ctx.d.home);
   // Plugin options only reach hooks; the CLI reads them from here.
   writeJsonAtomic(path.join(ctx.d.state, "config.json"), ctx.cfg);
+  let project = null;
+  if (typeof input.session_id === "string") {
+    const s = loadSession(ctx.d, input.session_id);
+    s.project = projectOf(input.cwd, { home: ctx.userHome });
+    project = s.project;
+    saveSession(ctx.d, input.session_id, s);
+  }
+  markActive(ctx.d, project, ctx.now);
   const curator = loadCurator(ctx.d);
   if (since(ctx.now, curator.lastLifecycleAt) >= DAY) {
     const usage = loadUsage(ctx.d);
@@ -76,15 +116,19 @@ function sessionStart(ctx) {
       commit(ctx, `peka: archive unused skills (${r.archived.join(", ")})`);
     }
   }
-  const out = { hookEventName: "SessionStart", additionalContext: sessionBrief(ctx.d) };
+  buildIndex(ctx.d);
+  const out = { hookEventName: "SessionStart", additionalContext: sessionBrief(ctx.d, project) };
   if (sync(ctx)) out.reloadSkills = true;
-  return { hookSpecificOutput: out };
+  const notice = weeklyNotice(ctx);
+  return notice ? { systemMessage: notice, hookSpecificOutput: out } : { hookSpecificOutput: out };
 }
 
 function userPromptSubmit(input, ctx) {
   const s = loadSession(ctx.d, input.session_id);
   s.turnsSinceMemory += 1;
+  const project = sessionProject(ctx, input, s);
   saveSession(ctx.d, input.session_id, s);
+  markActive(ctx.d, project, ctx.now);
   return null;
 }
 
@@ -143,7 +187,10 @@ function postToolUse(input, ctx) {
   const s = loadSession(ctx.d, input.session_id);
   s.toolsSinceSkill += 1;
   const { kind } = classify(input.tool_name, input.tool_input, ctx.d, ctx.claudeSkillsDir);
-  if (kind === "memory") s.turnsSinceMemory = 0;
+  if (kind === "memory") {
+    s.turnsSinceMemory = 0;
+    buildIndex(ctx.d);
+  }
   if (kind === "skill") {
     s.toolsSinceSkill = 0;
     sync(ctx);
@@ -180,7 +227,8 @@ function reviewPrompt(input, ctx, s) {
   saveSession(ctx.d, input.session_id, s);
 
   const focus = memoryDue && skillDue ? "memory and skills" : memoryDue ? "memory" : "skills";
-  return context("Stop", reviewerInstruction({ digest: file, focus, d: ctx.d, model: ctx.cfg.reviewerModel }));
+  const project = s.project !== undefined ? s.project : projectOf(input.cwd, { home: ctx.userHome });
+  return context("Stop", reviewerInstruction({ digest: file, focus, d: ctx.d, model: ctx.cfg.reviewerModel, project }));
 }
 
 function curatorPrompt(ctx) {
@@ -193,7 +241,8 @@ function curatorPrompt(ctx) {
   if (since(ctx.now, c.lastRunAt ?? c.seededAt) < ctx.cfg.curatorIntervalDays * DAY) return null;
   if (since(ctx.now, c.lastPromptAt) < 24 * HOUR) return null;
 
-  const report = writeCuratorReport(ctx.d, loadUsage(ctx.d), ctx.now);
+  const { overflow } = buildIndex(ctx.d);
+  const report = writeCuratorReport(ctx.d, loadUsage(ctx.d), ctx.now, { overflow, home: ctx.userHome });
   c.lastPromptAt = ctx.now.toISOString();
   saveCurator(ctx.d, c);
   return context("Stop", curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel }));
@@ -276,8 +325,18 @@ function subagentStop(input, ctx) {
   }
   sync(ctx);
   pruneDigests(ctx);
+  buildIndex(ctx.d);
+  const before = headCommit(ctx.d.home);
   commit(ctx, `peka: ${role} update`);
-  return null;
+  return eachNotice(ctx, before);
+}
+
+// learning_notice "each": name what the commit just made changed.
+function eachNotice(ctx, before) {
+  if (ctx.cfg.learningNotice !== "each" || !before) return null;
+  const commits = changesSince(ctx.d.home, before);
+  const items = mergeItems(commits);
+  return items.length ? { systemMessage: `PEKA: ${describe(items)}.` } : null;
 }
 
 export function handle(event, input, ctx) {
@@ -291,7 +350,7 @@ export function handle(event, input, ctx) {
   const mainAgent = !input.agent_id;
   switch (event) {
     case "SessionStart":
-      return sessionStart(ctx);
+      return sessionStart(input, ctx);
     case "UserPromptSubmit":
       return mainAgent ? userPromptSubmit(input, ctx) : null;
     case "UserPromptExpansion":

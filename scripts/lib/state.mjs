@@ -66,3 +66,40 @@ export function log(d, message) {
     // Logging must never break a hook.
   }
 }
+
+export function localDate(date) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const MAX_ACTIVE_DAYS = 120;
+
+export function loadProjects(d) {
+  const data = readJson(path.join(d.state, "projects.json"), {});
+  return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+}
+
+export function saveProjects(d, projects) {
+  writeJsonAtomic(path.join(d.state, "projects.json"), projects);
+}
+
+// Remember that `project` was worked on today; the lifecycle ages project skills by these days.
+export function markActive(d, project, now) {
+  if (!project) return;
+  const projects = loadProjects(d);
+  const days = Array.isArray(projects[project]?.activeDays) ? projects[project].activeDays : [];
+  const today = localDate(now);
+  if (days.includes(today)) return;
+  projects[project] = { ...projects[project], activeDays: [...days, today].sort().slice(-MAX_ACTIVE_DAYS) };
+  saveProjects(d, projects);
+}
+
+const NOTICE_DEFAULTS = { lastNoticeAt: null, lastNoticeCommit: null };
+
+export function loadNotice(d) {
+  return { ...NOTICE_DEFAULTS, ...readJson(path.join(d.state, "notice.json"), {}) };
+}
+
+export function saveNotice(d, notice) {
+  writeJsonAtomic(path.join(d.state, "notice.json"), notice);
+}

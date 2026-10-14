@@ -16,8 +16,13 @@ Markdown, with git history.
   immediately, as a memory or a skill, whichever fits.
 - **Learns by itself.** Memories and reusable skills are written by a background
   reviewer while you work.
-- **Keeps itself tidy.** A weekly curator merges duplicates, fixes the index, and
-  archives skills you stopped using. Nothing is ever hard-deleted.
+- **Knows which project you are in.** Memories and skills can belong to a project. A
+  session sees your global memories plus the current project's in full; other projects
+  show up as one line each, so the context stays lean as the store grows.
+- **Keeps itself tidy.** A weekly curator merges duplicates and archives skills you
+  stopped using. Nothing is ever hard-deleted.
+- **Shows what it learned.** A short weekly note (or one after every save, if you
+  prefer) and `/peka:status log` list what PEKA added, changed, or archived.
 - **Native.** Uses only Claude Code's own hooks, subagents, skills, and auto memory. No
   extra API keys, no external services, no network calls, no npm dependencies.
 
@@ -54,7 +59,7 @@ Start a new session afterwards.
 
 ```
 ~/.peka/
-├── memory/               global memory (MEMORY.md index + one file per memory)
+├── memory/               one file per memory; MEMORY.md and projects/ are generated indexes
 ├── skills/<name>/        skills PEKA learned, linked into ~/.claude/skills/<name>
 ├── archive/              retired skills and memories
 ├── state/                counters, usage, digests, logs (not in git)
@@ -63,7 +68,9 @@ Start a new session afterwards.
 
 1. **Briefing.** Each session starts with a short note telling Claude its memory is
    global, to check the index before a task, and to hand anything you teach it to
-   `/peka:remember` right away. That command passes it to the `peka:learner` agent,
+   `/peka:remember` right away. The note also names the current project (the folder of
+   its git repository, so worktrees count as the same project; outside git there is no
+   project) and lists that project's memories. That command passes it to the `peka:learner` agent,
    which decides whether it is a memory (a fact or preference) or a skill (a
    procedure) and files it without duplicates.
 2. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls
@@ -77,8 +84,28 @@ Start a new session afterwards.
 5. **Commit.** When the reviewer finishes, PEKA links new skills into
    `~/.claude/skills` and commits `~/.peka` to its local git repository.
 6. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
-   memories and tightens the index. Skills unused for 14 days are marked stale and
-   archived after 30, unless you pin them.
+   memories, tags project-specific ones, and checks memories that mention local paths
+   that no longer exist. Skills unused for 14 days are marked stale and archived after
+   30, unless you pin them. For a skill tagged with a project, only days you actually
+   worked on that project count, so a deploy procedure is not lost while its project
+   sits idle.
+
+### Projects and the index
+
+A memory or skill belongs to a project through its frontmatter:
+
+```yaml
+metadata:
+  type: feedback
+  project: wajom-portal, wajom-client   # leave out for global
+```
+
+PEKA builds `memory/MEMORY.md` from the memory files: global memories first, then one
+line per project pointing to `memory/projects/<project>.md`. It rebuilds the index when
+a session starts, when Claude writes a memory, and after each PEKA agent, so the index
+never drifts from the files; hand edits to it are overwritten. Untagged memories stay
+global, so nothing changes until things are tagged. `/peka:audit` and the curator
+suggest tags for items that mention a project PEKA has seen.
 
 PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so the
 background agents do not trigger permission prompts. That shortcut is limited on
@@ -108,6 +135,7 @@ repo.
 | `/peka:setup` | first-time setup and import of old memories |
 | `/peka:status` | every memory and skill PEKA has, with descriptions and usage |
 | `/peka:status show <name>` | open one memory or skill in full |
+| `/peka:status log [days]` | what PEKA added, changed, or archived recently, and how to undo it |
 | `/peka:status pin <skill>` | never mark this skill stale or archive it (`unpin` to undo) |
 | `/peka:remember <what>` | keep something now; PEKA decides memory or skill |
 | `/peka:skill <what>` | save a procedure as a reusable skill |
@@ -154,6 +182,10 @@ Set when you enable the plugin, and editable later in `/config`:
 | `reviewer_model` | `sonnet` | `sonnet`, `opus`, `haiku`, or `inherit` |
 | `curator_model` | `opus` | `sonnet`, `opus`, `haiku`, or `inherit` |
 | `auto_commit` | `true` | commit `~/.peka` after each review |
+| `learning_notice` | `weekly` | `weekly`: one line a week on what PEKA saved; `each`: one line after every save; `off` |
+
+Learning notices and `/peka:status log` read the git history of `~/.peka`, so they need
+git and `auto_commit` on.
 
 Environment variables:
 

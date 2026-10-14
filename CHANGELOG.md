@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.4
+
+- Project scoping: memories and skills can carry `metadata.project` (one or several
+  projects). The project is the folder of the session's git repository; worktrees count
+  as the main repository, and outside git there is no project.
+- `MEMORY.md` is now generated from the memory files: global memories, then one line per
+  project pointing to `memory/projects/<project>.md`. It is rebuilt at session start,
+  after Claude writes a memory, and after each PEKA agent, and stays under 190 lines and 24 KB.
+- The session brief names the current project and lists its memories.
+- Project skills age only on days their project is worked on, so a rarely used
+  procedure is not archived while its project is idle.
+- Learning notices: new `learning_notice` option (`weekly` by default, `each`, or `off`)
+  reports what PEKA added, changed, or archived, read from the store's git history.
+- `/peka:status log [days]` lists recent changes with a `git revert` hint; `/peka:status`
+  groups skills by project and shows memory projects.
+- `/peka:audit` and the curator suggest project tags for items that mention a known
+  project; audit no longer reports index drift, since the index is generated.
+- The curator report adds project and age columns and lists memories that mention local
+  paths that no longer exist.
+
 ## 0.1.3
 
 - New `peka:learner` agent: `/peka:remember` now hands what you teach to it, and it

@@ -82,3 +82,26 @@ test("log appends lines and never throws", () => {
   assert.match(lines[1], /^\d{4}-\d{2}-\d{2}T.* second$/);
   assert.doesNotThrow(() => log({ log: path.join(d.log, "child", "x.log") }, "x"));
 });
+
+test("markActive records each local day once per project and keeps the last 120", async () => {
+  const { loadProjects, markActive, localDate } = await import("../scripts/lib/state.mjs");
+  const d = dirs(fs.mkdtempSync(path.join(os.tmpdir(), "peka-active-")));
+  ensureDirs(d);
+  const t0 = new Date(2026, 0, 1, 10);
+  markActive(d, "abqary-new", t0);
+  markActive(d, "abqary-new", new Date(2026, 0, 1, 23));
+  markActive(d, null, t0);
+  assert.deepEqual(loadProjects(d), { "abqary-new": { activeDays: [localDate(t0)] } });
+  for (let i = 1; i < 130; i++) markActive(d, "abqary-new", new Date(2026, 0, 1 + i, 10));
+  const days = loadProjects(d)["abqary-new"].activeDays;
+  assert.equal(days.length, 120);
+  assert.equal(days.at(-1), localDate(new Date(2026, 0, 130, 10)));
+});
+
+test("notice state defaults to empty and round-trips", async () => {
+  const { loadNotice, saveNotice } = await import("../scripts/lib/state.mjs");
+  const d = dirs(fs.mkdtempSync(path.join(os.tmpdir(), "peka-notice-")));
+  assert.deepEqual(loadNotice(d), { lastNoticeAt: null, lastNoticeCommit: null });
+  saveNotice(d, { lastNoticeAt: "2026-01-01T00:00:00.000Z", lastNoticeCommit: "abc" });
+  assert.equal(loadNotice(d).lastNoticeCommit, "abc");
+});
