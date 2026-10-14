@@ -138,3 +138,68 @@ test("writeCuratorReport lists skills and memory stats", () => {
   assert.match(text, /Memory files: 2/);
   assert.match(text, /MEMORY\.md lines: 2/);
 });
+
+function addProjectSkill(d, name, project) {
+  fs.mkdirSync(path.join(d.skills, name), { recursive: true });
+  fs.writeFileSync(
+    path.join(d.skills, name, "SKILL.md"),
+    `---\nname: ${name}\ndescription: test\nmetadata:\n  project: ${project}\n---\n`,
+  );
+}
+
+function activeDays(start, count) {
+  return Array.from({ length: count }, (_, i) => {
+    const t = new Date(start.getTime() + (i + 1) * DAY);
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  });
+}
+
+test("skillProjects reads the project tags of a skill", async () => {
+  const { skillProjects } = await import("../scripts/lib/skills.mjs");
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "wajom-portal, wajom-client");
+  addSkill(d, "plain");
+  assert.deepEqual(skillProjects(d, "deploy"), ["wajom-portal", "wajom-client"]);
+  assert.deepEqual(skillProjects(d, "plain"), []);
+  assert.deepEqual(skillProjects(d, "missing"), []);
+});
+
+test("a project skill does not age while its project is idle", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "wajom-portal");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { deploy: { created: t0.toISOString(), uses: 1, lastUsed: t0.toISOString(), state: "active" } } };
+  const r = applyLifecycle(d, usage, new Date(t0.getTime() + 40 * DAY), cfg, { "wajom-portal": { activeDays: [] } });
+  assert.deepEqual(r, { stale: [], archived: [], reactivated: [] });
+  assert.equal(usage.skills.deploy.state, "active");
+});
+
+test("a project skill goes stale after 14 active days and is archived after 30", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "wajom-portal");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { deploy: { created: t0.toISOString(), uses: 1, lastUsed: t0.toISOString(), state: "active" } } };
+  const late = new Date(t0.getTime() + 90 * DAY);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 13) } }).stale, []);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 14) } }).stale, ["deploy"]);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 30) } }).archived, ["deploy"]);
+});
+
+test("a multi-project skill counts the active days of all its projects once", () => {
+  const { d } = setup();
+  addProjectSkill(d, "build", "wajom-portal, wajom-client");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { build: { created: t0.toISOString(), uses: 1, lastUsed: t0.toISOString(), state: "active" } } };
+  const days = activeDays(t0, 14);
+  const projects = { "wajom-portal": { activeDays: days.slice(0, 10) }, "wajom-client": { activeDays: days.slice(4) } };
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 90 * DAY), cfg, projects).stale, ["build"]);
+});
+
+test("a skill tagged with a project never seen is never staled by age", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "never-opened");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { deploy: { created: t0.toISOString(), uses: 0, state: "active" } } };
+  const r = applyLifecycle(d, usage, new Date(t0.getTime() + 365 * DAY), cfg, {});
+  assert.deepEqual(r.stale.concat(r.archived), []);
+});

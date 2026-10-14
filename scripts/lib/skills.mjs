@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isInside } from "./guard.mjs";
+import { projectsOf, readFrontmatter } from "./frontmatter.mjs";
+import { loadProjects, localDate } from "./state.mjs";
 
 const DAY = 86400000;
 
@@ -87,7 +89,29 @@ export function archiveSkill(d, name, now, usage) {
   return dest;
 }
 
-export function applyLifecycle(d, usage, now, cfg) {
+export function skillProjects(d, name) {
+  try {
+    return projectsOf(readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8")));
+  } catch {
+    return [];
+  }
+}
+
+// Days a skill has gone unused. A project skill only ages on days one of its projects was
+// worked on, so a rarely needed procedure survives while its project sits idle.
+export function skillAge(d, name, entry, now, projects) {
+  const since = new Date(entry.lastUsed ?? entry.created);
+  const tags = skillProjects(d, name);
+  if (!tags.length) return (now.getTime() - since.getTime()) / DAY;
+  const after = localDate(since);
+  const days = new Set();
+  for (const p of tags) {
+    for (const day of projects[p]?.activeDays ?? []) if (day > after) days.add(day);
+  }
+  return days.size;
+}
+
+export function applyLifecycle(d, usage, now, cfg, projects = loadProjects(d)) {
   const result = { stale: [], archived: [], reactivated: [] };
   for (const name of listSkills(d)) {
     const entry = (usage.skills[name] ??= {});
@@ -98,7 +122,7 @@ export function applyLifecycle(d, usage, now, cfg) {
       continue;
     }
     if (entry.pinned) continue;
-    const ageDays = (now.getTime() - Date.parse(entry.lastUsed ?? entry.created)) / DAY;
+    const ageDays = skillAge(d, name, entry, now, projects);
     if (ageDays >= cfg.archiveAfterDays) {
       archiveSkill(d, name, now, usage);
       result.archived.push(name);
