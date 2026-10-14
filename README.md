@@ -69,8 +69,8 @@ Start a new session afterwards.
 1. **Briefing.** Each session starts with a short note telling Claude its memory is
    global, to check the index before a task, and to hand anything you teach it to
    `/peka:remember` right away. The note also names the current project (the folder of
-   its git repository, so worktrees count as the same project) and lists that project's
-   memories. That command passes it to the `peka:learner` agent,
+   its git repository, so worktrees count as the same project; outside git there is no
+   project) and lists that project's memories. That command passes it to the `peka:learner` agent,
    which decides whether it is a memory (a fact or preference) or a skill (a
    procedure) and files it without duplicates.
 2. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls

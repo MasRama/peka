@@ -44,11 +44,11 @@ test("projectOf resolves a git worktree to its main repository", () => {
   assert.equal(projectOf(wt), "wajom-client");
 });
 
-test("projectOf falls back to the folder name outside git", () => {
+test("projectOf has no project outside a git repository", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "peka-nogit-"));
-  const dir = path.join(root, "notes");
+  const dir = path.join(root, "Downloads");
   fs.mkdirSync(dir);
-  assert.equal(projectOf(dir, { home: os.homedir() }), "notes");
+  assert.equal(projectOf(dir, { home: os.homedir() }), null);
 });
 
 test("projectOf has no project for home, root, or a missing cwd", () => {

@@ -4,10 +4,10 @@
 
 - Project scoping: memories and skills can carry `metadata.project` (one or several
   projects). The project is the folder of the session's git repository; worktrees count
-  as the main repository.
+  as the main repository, and outside git there is no project.
 - `MEMORY.md` is now generated from the memory files: global memories, then one line per
   project pointing to `memory/projects/<project>.md`. It is rebuilt at session start,
-  after Claude writes a memory, and after each PEKA agent, and stays under 190 lines.
+  after Claude writes a memory, and after each PEKA agent, and stays under 190 lines and 24 KB.
 - The session brief names the current project and lists its memories.
 - Project skills age only on days their project is worked on, so a rarely used
   procedure is not archived while its project is idle.

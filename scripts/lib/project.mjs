@@ -27,14 +27,16 @@ function gitCommonDir(cwd) {
 }
 
 // The project a session works in: the folder of its git repository (worktrees resolve to the
-// main repository), else the folder itself. Home and the filesystem root are no project.
+// main repository). Outside git, and for home or the filesystem root, there is no project, so
+// folders like Downloads or /tmp never turn into one.
 export function projectOf(cwd, { home = os.homedir() } = {}) {
   if (typeof cwd !== "string" || !cwd) return null;
   const dir = path.resolve(cwd);
   if (!fs.existsSync(dir)) return null;
   if (dir === path.resolve(home) || dir === path.parse(dir).root) return null;
   const common = gitCommonDir(dir);
-  const root = common ? path.dirname(common) : dir;
+  if (!common) return null;
+  const root = path.dirname(common);
   if (root === path.resolve(home) || root === path.parse(root).root) return null;
   return normalizeProject(path.basename(root));
 }

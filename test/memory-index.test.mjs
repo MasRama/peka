@@ -136,3 +136,15 @@ test("a hand edit of MEMORY.md is replaced and the old index is ignored as a mem
   assert.match(read(d, "MEMORY.md"), /^- \[a\]\(a\.md\) — about a$/m);
   assert.doesNotMatch(read(d, "MEMORY.md"), /Old title/);
 });
+
+test("MEMORY.md stays under 24 KB so the project lines are never cut off at load", () => {
+  const d = setup();
+  for (let i = 0; i < 150; i++) memory(d, `memory-with-a-fairly-long-name-${String(i).padStart(3, "0")}`, { description: "d".repeat(200) });
+  memory(d, "p1", { project: "proj" });
+  const r = buildIndex(d);
+  const text = read(d, "MEMORY.md");
+  assert.ok(Buffer.byteLength(text) <= 24000, `${Buffer.byteLength(text)} bytes`);
+  assert.ok(r.overflow > 0);
+  assert.match(text, new RegExp(`- … ${r.overflow} more global memories, run /peka:status`));
+  assert.match(text, /- proj: 1 memory, see \[projects\/proj\.md\]\(projects\/proj\.md\)\n$/);
+});
