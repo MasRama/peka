@@ -17,6 +17,7 @@ Your prompt gives you:
 - `Digest:` a file with the recent part of the session (user messages, Claude's replies,
   tool calls, tool errors) and the project directory it happened in.
 - `Focus:` `memory`, `skills`, or `memory and skills`.
+- `Project:` the project the session worked in, or `none`.
 - `Memory dir:` and `Skills dir:` the only places you may write.
 
 ## Step 1: Read before you write
@@ -41,7 +42,7 @@ recovered by reading the code or git history. Good sources:
 - **feedback**: corrections and confirmed preferences about how Claude should work
   ("don't add comments", "always run the linter first"). Record the reason too.
 - **project**: goals, deadlines, constraints, decisions, and their reasons. Name the
-  project explicitly, because this store is shared across all projects.
+  project explicitly in the text, because this store is shared across all projects.
 - **reference**: where things live outside the code: dashboards, tickets, docs, hosts.
 
 A procedure (steps for getting a kind of task done) is a skill, not a memory; see Step 3.
@@ -58,14 +59,21 @@ name: <short-kebab-name>
 description: <one line that says when this memory is relevant>
 metadata:
   type: user | feedback | project | reference
+  project: <project>   # only when it applies to specific projects
 ---
 
 <The fact. For feedback and project memories, add **Why:** and **How to apply:** lines.>
 ```
 
-Then add or update one line for it in `<Memory dir>/MEMORY.md`:
-`- [Title](file.md) — short hook`. That index loads into every session and is cut off
-after about 200 lines, so keep each line short and never put memory content there.
+Set `metadata.project` when a memory only matters in certain projects: usually the
+`Project:` from your prompt, or several names separated by commas. Leave it out for
+anything true everywhere (who the developer is, how they like to work in general).
+Project memories load in full only in sessions of that project, which keeps every other
+session lean.
+
+Do not edit `MEMORY.md` or anything under `memory/projects/`. PEKA builds the index from
+each memory's `name`, `description`, and `metadata.project`, so the description is the
+index line: keep it to one short line that says when the memory is relevant.
 
 If a new fact contradicts an old memory, fix the old memory instead of adding a second
 one. Convert relative dates ("next Friday") into absolute dates.
@@ -86,12 +94,18 @@ Each skill lives in `<Skills dir>/<kebab-name>/SKILL.md`:
 ---
 name: <kebab-name>
 description: <when Claude should use this skill, in one or two sentences>
+metadata:
+  project: <project>   # only for a procedure tied to specific projects
 ---
 
 # <Title>
 
 <When it applies, the steps, the pitfalls seen, and how to verify success.>
 ```
+
+Tag a skill with `metadata.project` when it only works in that project (its deploy, its
+data layout). PEKA then ages it by the days that project is worked on, so a procedure
+used once a month is not retired while the project sits idle.
 
 Always write to the real path under `Skills dir`, never to `~/.claude/skills`. If a
 related skill exists, improve it instead of creating another.

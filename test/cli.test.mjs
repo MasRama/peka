@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { searchTranscripts } from "../scripts/lib/search.mjs";
 
@@ -272,12 +272,13 @@ test("audit reports misplaced knowledge and store problems", () => {
   assert.match(r.stdout, /Memories that read like procedures[\s\S]*deploy-howto/);
   assert.match(r.stdout, /Skills that read like plain facts[\s\S]*api-port/);
   assert.match(r.stdout, /Skills outside PEKA[\s\S]*my-own — mine/);
-  assert.match(r.stdout, /not in MEMORY\.md[\s\S]*loose/);
-  assert.match(r.stdout, /points to a missing file[\s\S]*gone\.md/);
   assert.match(r.stdout, /missing frontmatter fields[\s\S]*loose/);
+  assert.doesNotMatch(r.stdout, /not in MEMORY\.md|points to a missing file/);
+  const index = fs.readFileSync(path.join(mem, "MEMORY.md"), "utf8");
+  assert.match(index, /^- \[loose\]\(loose\.md\)/m, "audit rebuilds the index first");
+  assert.doesNotMatch(index, /gone\.md/);
   assert.doesNotMatch(r.stdout, /Skills that read like plain facts[^\n]*\n[^\n]*deploy-api/);
   assert.doesNotMatch(r.stdout, /README\.md/);
-  assert.doesNotMatch(r.stdout, /not in MEMORY\.md[^\n]*\n(  - [^\n]*\n)*  - deploy-howto/);
 });
 
 test("audit of a tidy store says so", () => {
@@ -326,4 +327,78 @@ test("status mentions skills outside PEKA", () => {
   fs.mkdirSync(path.join(s.claude, "skills", "mine"), { recursive: true });
   fs.writeFileSync(path.join(s.claude, "skills", "mine", "SKILL.md"), "---\nname: mine\ndescription: m\n---\n");
   assert.match(s.run("status").stdout, /Skills outside PEKA: 1 \(see \/peka:audit\)/);
+});
+
+function commitStore(home, message) {
+  execFileSync("git", ["add", "-A"], { cwd: home });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", message], { cwd: home });
+  return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: home }).toString().trim();
+}
+
+test("log lists recent store changes and how to undo them", () => {
+  const s = sandbox();
+  seedStore(s);
+  const sha = commitStore(s.home, "peka: reviewer update");
+  fs.writeFileSync(path.join(s.home, "memory", "MEMORY.md"), "only the index\n");
+  commitStore(s.home, "peka: index only");
+  const r = s.run("log");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /PEKA changes in the last 7 days:/);
+  assert.match(r.stdout, new RegExp(`\\d{4}-\\d{2}-\\d{2} ${sha} peka: reviewer update\\n  - memory loose added\\n  - memory prefers-pnpm added\\n  - skill deploy-api added`));
+  assert.doesNotMatch(r.stdout, /index only/);
+  assert.ok(r.stdout.includes(`git -C ${s.home} revert <hash>`));
+  assert.equal(s.run("log", "400").status, 0);
+  assert.equal(s.run("log", "abc").status, 2);
+});
+
+test("log explains when there is no history", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  fs.rmSync(path.join(s.home, ".git"), { recursive: true });
+  const r = s.run("log");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /needs git and auto-commit/);
+});
+
+test("status groups skills by project and shows memory projects", () => {
+  const s = sandbox();
+  seedStore(s);
+  fs.mkdirSync(path.join(s.home, "skills", "abq-deploy"), { recursive: true });
+  fs.writeFileSync(
+    path.join(s.home, "skills", "abq-deploy", "SKILL.md"),
+    "---\nname: abq-deploy\ndescription: Deploy abqary\nmetadata:\n  project: abqary-new\n---\n",
+  );
+  fs.writeFileSync(
+    path.join(s.home, "memory", "billing.md"),
+    "---\nname: billing\ndescription: billing context\nmetadata:\n  type: project\n  project: abqary-new\n---\n",
+  );
+  fs.writeFileSync(path.join(s.home, "state", "usage.json"), JSON.stringify({ skills: { "abq-deploy": { created: new Date().toISOString(), uses: 0, state: "active" } } }));
+  const r = s.run("status");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /billing \[project\] \(abqary-new\) — billing context/);
+  assert.match(r.stdout, /  Global:\n  - deploy-api — Deploy the API/);
+  assert.match(r.stdout, /  abqary-new:\n  - abq-deploy — Deploy abqary\n    0 uses, last never, active, 0 active days since last use/);
+});
+
+test("audit lists untagged items that mention a known project", () => {
+  const s = sandbox();
+  seedStore(s);
+  fs.writeFileSync(path.join(s.home, "state", "projects.json"), JSON.stringify({ "deploy-api": { activeDays: [] }, "abqary-new": { activeDays: [] } }));
+  fs.writeFileSync(
+    path.join(s.home, "memory", "abq-fact.md"),
+    "---\nname: abq-fact\ndescription: fact about abqary-new\nmetadata:\n  type: project\n---\nx\n",
+  );
+  const r = s.run("audit");
+  assert.match(r.stdout, /mention a known project but have no project tag[\s\S]*memory abq-fact\.md: abqary-new/);
+  assert.match(r.stdout, /skill deploy-api: deploy-api/);
+});
+
+test("learn and curate pass the project and keep the index fresh", () => {
+  const s = sandbox();
+  s.run("setup", "--apply");
+  fs.writeFileSync(path.join(s.home, "state", "sessions", "sess-p.json"), JSON.stringify({ project: "abqary-new" }));
+  assert.match(s.run("learn", "--session", "sess-p", "--mode", "memory").stdout, /^Project: abqary-new$/m);
+  fs.writeFileSync(path.join(s.home, "memory", "m.md"), "---\nname: m\ndescription: d\n---\n");
+  assert.match(s.run("curate").stdout, /^Project: none$/m);
+  assert.match(fs.readFileSync(path.join(s.home, "memory", "MEMORY.md"), "utf8"), /\[m\]\(m\.md\)/);
 });

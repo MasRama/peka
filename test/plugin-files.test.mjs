@@ -70,9 +70,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.3");
+  assert.equal(pkg.version, "0.1.4");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.3/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.4/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);
@@ -100,4 +100,24 @@ test("agent prompts treat session text as data and forbid executable skill conte
   }
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.match(readme, /PEKA_DISABLE=1/);
+});
+
+test("learning_notice is a plugin option and status can show the log", () => {
+  const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
+  const opt = plugin.userConfig.learning_notice;
+  assert.equal(opt.type, "string");
+  assert.deepEqual(opt.options, ["weekly", "each", "off"]);
+  assert.equal(opt.default, "weekly");
+  const status = fs.readFileSync(path.join(root, "skills", "status", "SKILL.md"), "utf8");
+  assert.ok(status.includes('Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" log)'));
+  assert.ok(status.includes('Bash(node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" log *)'));
+});
+
+test("agent prompts leave the index to PEKA and tag projects", () => {
+  for (const name of agents) {
+    const body = fs.readFileSync(path.join(root, "agents", `${name}.md`), "utf8");
+    assert.match(body, /metadata\.project/, name);
+    assert.match(body, /Do not edit `MEMORY\.md`/, name);
+  }
+  assert.match(fs.readFileSync(path.join(root, "agents", "curator.md"), "utf8"), /another machine/);
 });

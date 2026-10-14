@@ -189,8 +189,7 @@ function section(title, items) {
   return items.length ? ["", `## ${title}`, "", ...items.map((i) => `- ${i}`)] : [];
 }
 
-export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandHome("~") } = {}) {
-  const projects = loadProjects(d);
+function storeItems(d) {
   const skills = listSkills(d).map((name) => {
     let raw = "";
     try {
@@ -209,6 +208,30 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     }
     return { ...m, raw };
   });
+  return { skills, memories };
+}
+
+function knownProjects(d, { skills, memories }) {
+  const tagged = new Set([...skills.flatMap((k) => k.tags), ...memories.flatMap((m) => m.projects)]);
+  return { tagged, known: [...new Set([...Object.keys(loadProjects(d)), ...tagged])].sort() };
+}
+
+// Untagged memories and skills that name a project PEKA knows: candidates for a project tag.
+export function untaggedCandidates(d, items = storeItems(d)) {
+  const { known } = knownProjects(d, items);
+  return [
+    ...items.memories.filter((m) => !m.projects.length).map((m) => ({ label: `memory ${m.file}`, text: m.raw })),
+    ...items.skills.filter((k) => !k.tags.length).map((k) => ({ label: `skill ${k.name}`, text: k.raw })),
+  ]
+    .map(({ label, text }) => ({ label, hits: known.filter((p) => mentions(text, p)) }))
+    .filter((x) => x.hits.length)
+    .map((x) => `${x.label}: ${x.hits.join(", ")}`);
+}
+
+export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandHome("~") } = {}) {
+  const projects = loadProjects(d);
+  const items = storeItems(d);
+  const { skills, memories } = items;
 
   const rows = skills.map(({ name, tags }) => {
     const u = usage.skills[name] ?? {};
@@ -217,15 +240,8 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     return `| ${name} | ${u.uses ?? 0} | ${last} | ${u.state ?? "active"} | ${u.pinned ? "yes" : "no"} | ${tags.join(", ") || "—"} | ${age} |`;
   });
 
-  const tagged = new Set([...skills.flatMap((k) => k.tags), ...memories.flatMap((m) => m.projects)]);
-  const known = [...new Set([...Object.keys(projects), ...tagged])].sort();
-  const untagged = [
-    ...memories.filter((m) => !m.projects.length).map((m) => ({ label: `memory ${m.file}`, text: m.raw })),
-    ...skills.filter((k) => !k.tags.length).map((k) => ({ label: `skill ${k.name}`, text: k.raw })),
-  ]
-    .map(({ label, text }) => ({ label, hits: known.filter((p) => mentions(text, p)) }))
-    .filter((x) => x.hits.length)
-    .map((x) => `${x.label}: ${x.hits.join(", ")}`);
+  const { tagged } = knownProjects(d, items);
+  const untagged = untaggedCandidates(d, items);
   const missing = memories
     .flatMap((m) => missingPaths(bodyOf(m.raw), home).map((p) => `${m.file}: ${p}`))
     .slice(0, MAX_MISSING);

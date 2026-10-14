@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Check PEKA's store for knowledge in the wrong place (procedures saved as memories, facts saved as skills, skills saved outside PEKA) and index problems, then fix what the user approves. Use for /peka:audit and /peka:audit adopt <skill>.
+description: Check PEKA's store for knowledge in the wrong place (procedures saved as memories, facts saved as skills, skills saved outside PEKA, project-specific items without a project tag), then fix what the user approves. Use for /peka:audit and /peka:audit adopt <skill>.
 disable-model-invocation: true
 argument-hint: "[adopt <skill>]"
 allowed-tools:
@@ -28,21 +28,23 @@ with a `.git`, `node_modules`, or `.env` are refused; pass that reason on.
 2. The script finds candidates by shape; you judge them. For each candidate in the
    "procedures" and "plain facts" sections, open it with
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" show <name>` and decide whether it is
-   really in the wrong place.
+   really in the wrong place. For each item in the "project tag" section, check that it
+   really applies to that project only; a general preference that merely mentions a
+   project stays global.
 3. Show the user one short list of proposed fixes, for example:
    - `deploy-howto`: memory → skill (it is a 5-step procedure)
    - `api-port`: skill → memory (it is a single fact)
    - `deploy-staging` in `~/.claude/skills`: adopt into PEKA (looks learned, not
      hand-made)
-   - add `loose` to `MEMORY.md`
+   - `abq-billing`: tag with project `abqary-new` (it is about that project only)
    Leave out skills in `~/.claude/skills` that look like the user's own hand-made ones
    unless they ask; adopting is their call.
 4. Ask which fixes to apply. Then:
-   - **Conversions and index fixes**: run
+   - **Conversions and project tags**: run
      `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" learn --session "${CLAUDE_SESSION_ID}" --mode decide`
      and launch `peka:learner` as it says, with a `Request:` that lists each approved
      fix precisely (for example "convert memory deploy-howto into a skill and retire the
-     memory; add loose.md to MEMORY.md").
+     memory; set metadata.project: abqary-new on memory abq-billing").
    - **Adoptions**: run `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" adopt <skill>` for
      each one approved.
    - Skills flagged as able to run commands: show them to the user; change nothing
