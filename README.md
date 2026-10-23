@@ -117,7 +117,8 @@ session and starts shortening descriptions once that listing passes about 1% of 
 context window, so PEKA links only global skills there. A skill tagged with a project is
 linked into `<repo>/.claude/skills` when a session starts in that repository, and listed
 in `.git/info/exclude` so it never shows up in `git status`. A skill of the repository's
-own with the same name is left alone.
+own with the same name is left alone. `/peka:status` and the curator report show how big
+the global listing is and flag it when it passes about 8,000 characters.
 
 PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so the
 reviewer, curator, and learner do not trigger permission prompts. That shortcut is

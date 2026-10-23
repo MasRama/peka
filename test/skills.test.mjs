@@ -327,3 +327,22 @@ test("syncProjectLinks never links skills into the PEKA home itself", () => {
   assert.deepEqual(syncProjectLinks(d, repoOf(d.home)), { created: [], removed: [], conflicts: [] });
   assert.equal(fs.existsSync(path.join(d.home, ".claude")), false);
 });
+
+test("writeCuratorReport measures the global skill listing", () => {
+  const { d } = setup();
+  addSkill(d, "deploy");
+  addProjectSkill(d, "trace", "shop");
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /Global skill listing: 1 skills, \d+ characters/);
+  assert.doesNotMatch(text, /over budget/i);
+});
+
+test("writeCuratorReport flags a global skill listing over budget", () => {
+  const { d } = setup();
+  for (let i = 0; i < 20; i++) {
+    fs.mkdirSync(path.join(d.skills, `s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(d.skills, `s${i}`, "SKILL.md"), `---\nname: s${i}\ndescription: ${"x".repeat(500)}\n---\n`);
+  }
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /over budget/i);
+});

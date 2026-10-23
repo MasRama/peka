@@ -227,6 +227,7 @@ test("status says which skills load everywhere and which only in their project",
   fs.writeFileSync(path.join(s.home, "skills", "shop-deploy", "SKILL.md"), "---\nname: shop-deploy\ndescription: d\nmetadata:\n  project: shop\n---\n");
   const r = s.run("status");
   assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Global skill listing: 1 skills, \d+ characters/);
   assert.match(r.stdout, /Global \(every session\):/);
   assert.match(r.stdout, /shop \(only in that project\):/);
 });

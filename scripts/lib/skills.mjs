@@ -283,6 +283,32 @@ export function untaggedCandidates(d, items = storeItems(d)) {
     .map((x) => `${x.label}: ${x.hits.join(", ")}`);
 }
 
+// Claude Code lists every global skill in every session and shortens the descriptions once the
+// listing passes about 1% of the context window: 8,000 characters on a 200k-token model.
+export const LISTING_BUDGET = 8000;
+
+export function globalListingChars(d) {
+  return globalSkills(d).reduce((n, name) => {
+    let fm = {};
+    try {
+      fm = readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8"));
+    } catch {
+      // Unreadable: counts as its name only.
+    }
+    return n + name.length + String(fm.description ?? "").length + String(fm.when_to_use ?? "").length;
+  }, 0);
+}
+
+export function listingSummary(d) {
+  const count = globalSkills(d).length;
+  const chars = globalListingChars(d);
+  const over = chars > LISTING_BUDGET;
+  return [
+    `Global skill listing: ${count} skills, ${chars} characters of names and descriptions (budget about ${LISTING_BUDGET}).`,
+    ...(over ? [`Global skill listing is over budget: tag project-only skills, merge overlapping ones, or archive unused ones.`] : []),
+  ];
+}
+
 export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandHome("~") } = {}) {
   const projects = loadProjects(d);
   const items = storeItems(d);
@@ -309,6 +335,7 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     `Memory dir: ${d.memory}`,
     `Memory files: ${stats.files}`,
     `MEMORY.md lines: ${stats.indexLines}`,
+    ...listingSummary(d),
     ...(overflow ? [`MEMORY.md overflow: ${overflow} global memories did not fit; merge or tag some.`] : []),
     "",
     "Age is calendar days since last use for global skills, and days the project was worked on for project skills.",

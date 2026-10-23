@@ -50,6 +50,9 @@ Your prompt gives you:
    - Skills tagged with a project are listed only in that project's sessions and aged by
      the days that project is worked on; do not archive them for being unused while
      their project is idle.
+   - Untagged skills are listed in every session. If the report says the global skill
+     listing is over budget, tag the ones that only fit certain projects first, then
+     merge overlapping global skills.
 5. **Request archives.** Write the actions file as JSON:
 
    ```json

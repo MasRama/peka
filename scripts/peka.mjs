@@ -20,6 +20,7 @@ import { applySettings, SettingsParseError } from "./lib/settings.mjs";
 import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import {
   globalSkills,
+  listingSummary,
   listSkills,
   skillAge,
   skillProjects,
@@ -229,6 +230,7 @@ function status() {
     }),
     "",
     `Skills: ${skills.length} (${d.skills})`,
+    ...listingSummary(d),
     ...skillGroups(skills, usage, conflicts),
     "",
     `Curator: last run ${curator.lastRunAt ?? "never"}`,
