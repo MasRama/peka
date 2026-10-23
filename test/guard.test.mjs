@@ -87,6 +87,17 @@ test("denies writes through a PEKA skill link with the real path", () => {
   assert.ok(r.reason.includes(path.join(fs.realpathSync(d.skills), "deploy", "SKILL.md")));
 });
 
+test("denies writes through a project skill link with the real path", () => {
+  const { root, d, claudeSkills } = setup();
+  fs.mkdirSync(path.join(d.skills, "deploy"));
+  const linked = path.join(root, "repo", ".claude", "skills");
+  fs.mkdirSync(linked, { recursive: true });
+  fs.symlinkSync(path.join(d.skills, "deploy"), path.join(linked, "deploy"));
+  const r = classify("Write", { file_path: path.join(linked, "deploy", "SKILL.md"), content: "x" }, d, claudeSkills);
+  assert.equal(r.decision, "deny");
+  assert.ok(r.reason.includes(path.join(fs.realpathSync(d.skills), "deploy", "SKILL.md")));
+});
+
 test("leaves user-owned skills in ~/.claude/skills alone", () => {
   const { d, claudeSkills } = setup();
   fs.mkdirSync(path.join(claudeSkills, "mine"));

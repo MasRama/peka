@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.6
+
+- Project skills are listed only inside their project. A skill tagged with
+  `metadata.project` is linked into `<repo>/.claude/skills` when a session starts in that
+  repository (and hidden from `git status` through `.git/info/exclude`) instead of into
+  `~/.claude/skills`, which now holds global skills only. Existing links of tagged skills
+  are moved on the next session start.
+- `/peka:status` labels which skills load in every session and which only in their
+  project, and both status and the curator report show the size of the global skill
+  listing, flagged once it passes Claude Code's listing budget (about 8,000 characters).
+
 ## 0.1.5
 
 - Checkpoints run the reviewer (and the weekly curator) in the foreground: the session

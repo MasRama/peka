@@ -13,30 +13,39 @@ export function normalizeProject(name) {
   return cleaned || null;
 }
 
-function gitCommonDir(cwd) {
+// One git call for the common dir (the main repository, also for worktrees), the checkout
+// root, and the exclude file every checkout of the repository shares.
+function gitPaths(cwd) {
   try {
-    const out = execFileSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-      cwd,
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 2000,
-    });
-    return out.toString().trim() || null;
+    const out = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel", "--git-path", "info/exclude"],
+      { cwd, stdio: ["ignore", "pipe", "ignore"], timeout: 2000 },
+    );
+    const [common, root, exclude] = out.toString().trim().split("\n");
+    return common && root && exclude ? { common, root, exclude } : null;
   } catch {
     return null;
   }
 }
 
-// The project a session works in: the folder of its git repository (worktrees resolve to the
-// main repository). Outside git, and for home or the filesystem root, there is no project, so
-// folders like Downloads or /tmp never turn into one.
-export function projectOf(cwd, { home = os.homedir() } = {}) {
+// The repository a session works in: its project (the folder of the main repository, so
+// worktrees resolve to it), the checkout root, and the exclude file. Outside git, and for home
+// or the filesystem root, there is none, so folders like Downloads or /tmp never turn into a
+// project.
+export function repoOf(cwd, { home = os.homedir() } = {}) {
   if (typeof cwd !== "string" || !cwd) return null;
   const dir = path.resolve(cwd);
   if (!fs.existsSync(dir)) return null;
   if (dir === path.resolve(home) || dir === path.parse(dir).root) return null;
-  const common = gitCommonDir(dir);
-  if (!common) return null;
-  const root = path.dirname(common);
-  if (root === path.resolve(home) || root === path.parse(root).root) return null;
-  return normalizeProject(path.basename(root));
+  const git = gitPaths(dir);
+  if (!git) return null;
+  const main = path.dirname(git.common);
+  if (main === path.resolve(home) || main === path.parse(main).root) return null;
+  const project = normalizeProject(path.basename(main));
+  return project ? { project, root: git.root, exclude: git.exclude } : null;
+}
+
+export function projectOf(cwd, options) {
+  return repoOf(cwd, options)?.project ?? null;
 }

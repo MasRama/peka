@@ -18,7 +18,8 @@ asks for approval. Everything stays on your machine, in plain Markdown, with git
   runs every few turns.
 - **Knows which project you are in.** Memories and skills can belong to a project. A
   session sees your global memories plus the current project's in full; other projects
-  show up as one line each, so the context stays lean as the store grows.
+  show up as one line each. Project skills are listed only inside their project, so the
+  context stays lean as the store grows.
 - **Keeps itself tidy.** A weekly curator merges duplicates and archives skills you
   stopped using. Nothing is ever hard-deleted.
 - **Shows what it learned.** A short weekly note (or one after every save, if you
@@ -61,6 +62,7 @@ Start a new session afterwards.
 ~/.peka/
 ├── memory/               one file per memory; MEMORY.md and projects/ are generated indexes
 ├── skills/<name>/        skills PEKA learned, linked into ~/.claude/skills/<name>
+│                         (project skills: <repo>/.claude/skills/<name> instead)
 ├── archive/              retired skills and memories
 ├── state/                counters, usage, digests, logs (not in git)
 └── .git                  local history, committed after every review
@@ -84,8 +86,8 @@ Start a new session afterwards.
 4. **Review.** The reviewer reads the digest and your existing memory, then saves or
    updates memories and skills. It has no shell access: it can only read files and edit
    files inside `~/.peka`.
-5. **Commit.** When the reviewer finishes, PEKA links new skills into
-   `~/.claude/skills` and commits `~/.peka` to its local git repository.
+5. **Commit.** When the reviewer finishes, PEKA links new skills (global ones into
+   `~/.claude/skills`, project ones into the repository's `.claude/skills`) and commits `~/.peka` to its local git repository.
 6. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
    memories, tags project-specific ones, and checks memories that mention local paths
    that no longer exist. Skills unused for 14 days are marked stale and archived after
@@ -109,6 +111,14 @@ a session starts, when Claude writes a memory, and after each PEKA agent, so the
 never drifts from the files; hand edits to it are overwritten. Untagged memories stay
 global, so nothing changes until things are tagged. `/peka:audit` and the curator
 suggest tags for items that mention a project PEKA has seen.
+
+Skills follow the same split. Claude Code lists every skill in `~/.claude/skills` in every
+session and starts shortening descriptions once that listing passes about 1% of the
+context window, so PEKA links only global skills there. A skill tagged with a project is
+linked into `<repo>/.claude/skills` when a session starts in that repository, and listed
+in `.git/info/exclude` so it never shows up in `git status`. A skill of the repository's
+own with the same name is left alone. `/peka:status` and the curator report show how big
+the global listing is and flag it when it passes about 8,000 characters.
 
 PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so the
 reviewer, curator, and learner do not trigger permission prompts. That shortcut is
@@ -211,7 +221,9 @@ Then, if you want Claude Code's memory back to per project:
 1. Remove `autoMemoryDirectory` from `~/.claude/settings.json` (or restore the
    `settings.json.peka-backup-*` file setup created).
 2. Remove the skill links PEKA created:
-   `find ~/.claude/skills -maxdepth 1 -type l -lname "$HOME/.peka/*" -delete`
+   `find ~/.claude/skills -maxdepth 1 -type l -lname "$HOME/.peka/*" -delete`, and the
+   same in each repository's `.claude/skills` (the lines between `# PEKA:` markers in its
+   `.git/info/exclude` can go too).
 3. Delete `~/.peka` if you no longer want what it learned.
 
 ## Development

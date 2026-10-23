@@ -41,9 +41,12 @@ function pointsIntoPeka(target, d) {
   });
 }
 
-export function syncLinks(d, claudeSkillsDir) {
+// Links `names` (every live skill by default) into a skills directory and removes PEKA links
+// that are no longer wanted there. Anything else in the directory belongs to the user.
+export function syncLinks(d, claudeSkillsDir, names = listSkills(d)) {
   const result = { created: [], removed: [], conflicts: [] };
-  const live = new Set(listSkills(d));
+  const live = new Set(names);
+  if (!live.size && !fs.existsSync(claudeSkillsDir)) return result;
   fs.mkdirSync(claudeSkillsDir, { recursive: true });
 
   for (const name of live) {
@@ -67,6 +70,58 @@ export function syncLinks(d, claudeSkillsDir) {
       fs.unlinkSync(link);
       result.removed.push(name);
     }
+  }
+  return result;
+}
+
+// Skills without a project tag: Claude Code lists these in every session.
+export function globalSkills(d) {
+  return listSkills(d).filter((name) => !skillProjects(d, name).length);
+}
+
+export function projectSkills(d, project) {
+  return project ? listSkills(d).filter((name) => skillProjects(d, name).includes(project)) : [];
+}
+
+const EXCLUDE_START = "# PEKA: project skill links (managed by PEKA)";
+const EXCLUDE_END = "# PEKA: end";
+
+// Lists the PEKA links in the checkout's exclude file so they never show up in git status.
+function writeExclude(file, names) {
+  let text = "";
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    // No exclude file yet.
+  }
+  const lines = text.split("\n");
+  const start = lines.indexOf(EXCLUDE_START);
+  const end = lines.indexOf(EXCLUDE_END, start);
+  if (start !== -1 && end !== -1) lines.splice(start, end - start + 1);
+  let next = lines.join("\n").replace(/\n+$/, "");
+  if (names.length) {
+    next += `${next ? "\n\n" : ""}${[EXCLUDE_START, ...names.map((n) => `/.claude/skills/${n}`), EXCLUDE_END].join("\n")}`;
+  }
+  next = next ? `${next}\n` : "";
+  if (next === text) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, next);
+}
+
+// Project skills live in the project's own .claude/skills, so other projects never list them.
+export function syncProjectLinks(d, repo) {
+  const empty = { created: [], removed: [], conflicts: [] };
+  if (!repo?.project || !repo.root) return empty;
+  const home = fs.existsSync(d.home) ? fs.realpathSync(d.home) : d.home;
+  if (isInside(repo.root, d.home) || isInside(repo.root, home)) return empty;
+  const dir = path.join(repo.root, ".claude", "skills");
+  const result = syncLinks(d, dir, projectSkills(d, repo.project));
+  if (fs.existsSync(dir) && repo.exclude) {
+    const linked = fs.readdirSync(dir).filter((name) => {
+      const target = linkTarget(path.join(dir, name));
+      return target && pointsIntoPeka(target, d);
+    });
+    writeExclude(repo.exclude, linked.sort());
   }
   return result;
 }
@@ -228,6 +283,32 @@ export function untaggedCandidates(d, items = storeItems(d)) {
     .map((x) => `${x.label}: ${x.hits.join(", ")}`);
 }
 
+// Claude Code lists every global skill in every session and shortens the descriptions once the
+// listing passes about 1% of the context window: 8,000 characters on a 200k-token model.
+export const LISTING_BUDGET = 8000;
+
+export function globalListingChars(d) {
+  return globalSkills(d).reduce((n, name) => {
+    let fm = {};
+    try {
+      fm = readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8"));
+    } catch {
+      // Unreadable: counts as its name only.
+    }
+    return n + name.length + String(fm.description ?? "").length + String(fm.when_to_use ?? "").length;
+  }, 0);
+}
+
+export function listingSummary(d) {
+  const count = globalSkills(d).length;
+  const chars = globalListingChars(d);
+  const over = chars > LISTING_BUDGET;
+  return [
+    `Global skill listing: ${count} skills, ${chars} characters of names and descriptions (budget about ${LISTING_BUDGET}).`,
+    ...(over ? [`Global skill listing is over budget: tag project-only skills, merge overlapping ones, or archive unused ones.`] : []),
+  ];
+}
+
 export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandHome("~") } = {}) {
   const projects = loadProjects(d);
   const items = storeItems(d);
@@ -254,6 +335,7 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     `Memory dir: ${d.memory}`,
     `Memory files: ${stats.files}`,
     `MEMORY.md lines: ${stats.indexLines}`,
+    ...listingSummary(d),
     ...(overflow ? [`MEMORY.md overflow: ${overflow} global memories did not fit; merge or tag some.`] : []),
     "",
     "Age is calendar days since last use for global skills, and days the project was worked on for project skills.",

@@ -103,8 +103,9 @@ metadata:
 ```
 
 Tag a skill with `metadata.project` when it only works in that project (its deploy, its
-data layout). PEKA then ages it by the days that project is worked on, so a procedure
-used once a month is not retired while the project sits idle.
+data layout). PEKA then lists it only in sessions of that project, and ages it by the
+days that project is worked on, so a procedure used once a month is not retired while
+the project sits idle. An untagged skill is listed in every session of every project.
 
 Always write to the real path under `Skills dir`, never to `~/.claude/skills`. If a
 related skill exists, improve it instead of creating another.

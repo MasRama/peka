@@ -210,6 +210,28 @@ test("status lists every memory and skill with its description", () => {
   assert.match(r.stdout, /\/peka:status show <name>/);
 });
 
+test("setup links only global skills into ~/.claude/skills", () => {
+  const s = sandbox();
+  for (const [name, meta] of [["slugpost", ""], ["shop-deploy", "metadata:\n  project: shop\n"]]) {
+    fs.mkdirSync(path.join(s.home, "skills", name), { recursive: true });
+    fs.writeFileSync(path.join(s.home, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: d\n${meta}---\n`);
+  }
+  assert.equal(s.run("setup", "--apply").status, 0);
+  assert.deepEqual(fs.readdirSync(path.join(s.claude, "skills")), ["slugpost"]);
+});
+
+test("status says which skills load everywhere and which only in their project", () => {
+  const s = sandbox();
+  seedStore(s);
+  fs.mkdirSync(path.join(s.home, "skills", "shop-deploy"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, "skills", "shop-deploy", "SKILL.md"), "---\nname: shop-deploy\ndescription: d\nmetadata:\n  project: shop\n---\n");
+  const r = s.run("status");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Global skill listing: 1 skills, \d+ characters/);
+  assert.match(r.stdout, /Global \(every session\):/);
+  assert.match(r.stdout, /shop \(only in that project\):/);
+});
+
 test("show prints a memory or skill in full and rejects paths", () => {
   const s = sandbox();
   seedStore(s);
@@ -376,8 +398,8 @@ test("status groups skills by project and shows memory projects", () => {
   const r = s.run("status");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /billing \[project\] \(abqary-new\) — billing context/);
-  assert.match(r.stdout, /  Global:\n  - deploy-api — Deploy the API/);
-  assert.match(r.stdout, /  abqary-new:\n  - abq-deploy — Deploy abqary\n    0 uses, last never, active, 0 active days since last use/);
+  assert.match(r.stdout, /  Global \(every session\):\n  - deploy-api — Deploy the API/);
+  assert.match(r.stdout, /  abqary-new \(only in that project\):\n  - abq-deploy — Deploy abqary\n    0 uses, last never, active, 0 active days since last use/);
 });
 
 test("audit lists untagged items that mention a known project", () => {

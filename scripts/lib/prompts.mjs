@@ -54,7 +54,7 @@ export function sessionBrief(d, project = null) {
     `- When the user corrects you, states a preference, teaches you how to do something, or asks you to remember something, run /peka:remember right away; do not save the memory yourself. PEKA decides whether it becomes a memory or a skill. When they ask for a procedure to be saved as a skill, run /peka:skill. Do not write skills into ~/.claude/skills unless the user asks for a personal skill there.`,
     `- Project-specific memories and skills carry metadata.project: <project>. PEKA builds MEMORY.md from the memory files, so do not edit the index by hand.`,
     `- A memory can be out of date. If it conflicts with what you observe now, trust what you observe and fix the memory.`,
-    `- Skills PEKA learned are in your skill list. Use one whenever its description fits the task.`,
+    `- Skills PEKA learned are in your skill list: global ones in every session, project ones only in their project. Use one whenever its description fits the task.`,
     ...projectBrief(d, project),
   ].join("\n");
 }
