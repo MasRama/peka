@@ -70,9 +70,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.4");
+  assert.equal(pkg.version, "0.1.5");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.4/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.5/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);
