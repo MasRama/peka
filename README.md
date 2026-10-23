@@ -3,19 +3,19 @@
 > Your coding agent learns from experience.
 
 PEKA is a Claude Code plugin that gives Claude one memory shared by all your projects and
-lets it learn on its own. Every few turns a background agent looks at what just happened
+lets it learn on its own. Every few turns a reviewer agent looks at what just happened
 and saves what is worth keeping: your preferences, corrections you made, project facts,
 and step-by-step procedures it can reuse later. Once a week another agent tidies
 everything up.
 
-You keep working; nothing asks for approval. Everything stays on your machine, in plain
-Markdown, with git history.
+A review pauses the session briefly and ends with one line saying what it saved; nothing
+asks for approval. Everything stays on your machine, in plain Markdown, with git history.
 
 - **Global memory.** One store in `~/.peka`, loaded into every session in every project.
 - **Remembers on purpose.** Say `/peka:remember …` or `/peka:skill …` and it is filed
   immediately, as a memory or a skill, whichever fits.
-- **Learns by itself.** Memories and reusable skills are written by a background
-  reviewer while you work.
+- **Learns by itself.** Memories and reusable skills are written by a reviewer that
+  runs every few turns.
 - **Knows which project you are in.** Memories and skills can belong to a project. A
   session sees your global memories plus the current project's in full; other projects
   show up as one line each, so the context stays lean as the store grows.
@@ -77,7 +77,10 @@ Start a new session afterwards.
    since it last saved a skill.
 3. **Checkpoint.** When a counter reaches its interval (10 turns / 20 tool calls by
    default), PEKA writes a compact digest of the recent conversation and asks Claude to
-   launch the `peka:reviewer` agent in the background.
+   run the `peka:reviewer` agent and wait for it. The session pauses while the reviewer
+   works, then Claude replies with one line such as `PEKA: saved 1 memory.` (In the
+   background it would take two replies, one when it starts and one when Claude Code
+   reports that it finished.)
 4. **Review.** The reviewer reads the digest and your existing memory, then saves or
    updates memories and skills. It has no shell access: it can only read files and edit
    files inside `~/.peka`.
@@ -108,8 +111,8 @@ global, so nothing changes until things are tagged. `/peka:audit` and the curato
 suggest tags for items that mention a project PEKA has seen.
 
 PEKA writes skills to `~/.peka` and only links them into `~/.claude/skills`, so the
-background agents do not trigger permission prompts. That shortcut is limited on
-purpose:
+reviewer, curator, and learner do not trigger permission prompts. That shortcut is
+limited on purpose:
 
 - Only PEKA's own agents (reviewer, curator, learner) get it. When Claude in your main
   session writes a PEKA skill itself, you are asked as usual.

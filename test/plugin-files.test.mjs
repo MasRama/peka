@@ -23,8 +23,8 @@ const skills = ["setup", "search", "status", "review", "curate", "remember", "sk
 
 test("agents declare name, description, model, and no Bash", () => {
   const expected = {
-    reviewer: { model: "sonnet", background: "true" },
-    curator: { model: "opus", background: "true" },
+    reviewer: { model: "sonnet", background: undefined },
+    curator: { model: "opus", background: undefined },
     learner: { model: "sonnet", background: undefined },
   };
   for (const name of agents) {
