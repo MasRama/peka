@@ -12,7 +12,12 @@ import {
   applyLifecycle,
   archiveSkill,
   writeCuratorReport,
+  globalSkills,
+  projectSkills,
+  syncProjectLinks,
 } from "../scripts/lib/skills.mjs";
+import { execFileSync } from "node:child_process";
+import { repoOf } from "../scripts/lib/project.mjs";
 
 const DAY = 86400000;
 const cfg = loadConfig({});
@@ -240,4 +245,85 @@ test("writeCuratorReport adds projects, age, untagged candidates, missing paths,
   assert.doesNotMatch(text, /memory tagged\.md/);
   assert.match(text, new RegExp(`## Memories mentioning missing local paths\\n\\n- billing\\.md: ${home}/no-such-dir/x`));
   assert.match(text, /MEMORY\.md overflow: 3 global memories did not fit/);
+});
+
+test("syncLinks links only the names it is given and drops other PEKA links", () => {
+  const { d, claudeSkills } = setup();
+  addSkill(d, "a");
+  addSkill(d, "b");
+  syncLinks(d, claudeSkills);
+  assert.deepEqual(syncLinks(d, claudeSkills, ["a"]), { created: [], removed: ["b"], conflicts: [] });
+  assert.deepEqual(fs.readdirSync(claudeSkills), ["a"]);
+});
+
+test("syncLinks with nothing to link does not create the directory", () => {
+  const { d } = setup();
+  addSkill(d, "a");
+  const dir = path.join(path.dirname(d.home), "repo", ".claude", "skills");
+  assert.deepEqual(syncLinks(d, dir, []), { created: [], removed: [], conflicts: [] });
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test("globalSkills and projectSkills split skills by their project tag", () => {
+  const { d } = setup();
+  addSkill(d, "slugpost");
+  addProjectSkill(d, "deploy", "wajom-portal, wajom-client");
+  addProjectSkill(d, "trace", "wajom-portal");
+  assert.deepEqual(globalSkills(d), ["slugpost"]);
+  assert.deepEqual(projectSkills(d, "wajom-client"), ["deploy"]);
+  assert.deepEqual(projectSkills(d, "wajom-portal"), ["deploy", "trace"]);
+  assert.deepEqual(projectSkills(d, null), []);
+});
+
+function gitRepo(name) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "peka-repo-"));
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir);
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  return dir;
+}
+
+const gitStatus = (dir) => execFileSync("git", ["status", "--porcelain", "-uall"], { cwd: dir }).toString().trim();
+
+test("syncProjectLinks links a project's skills into its repo and keeps git status clean", () => {
+  const { d } = setup();
+  addSkill(d, "global");
+  addProjectSkill(d, "deploy", "shop");
+  addProjectSkill(d, "other", "blog");
+  const dir = gitRepo("shop");
+  const r = syncProjectLinks(d, repoOf(dir));
+  assert.deepEqual(r.created, ["deploy"]);
+  const linked = path.join(dir, ".claude", "skills");
+  assert.deepEqual(fs.readdirSync(linked), ["deploy"]);
+  assert.equal(fs.realpathSync(path.join(linked, "deploy")), fs.realpathSync(path.join(d.skills, "deploy")));
+  assert.equal(gitStatus(dir), "");
+});
+
+test("syncProjectLinks drops a link and its exclude line once the skill leaves the project", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "shop");
+  const dir = gitRepo("shop");
+  syncProjectLinks(d, repoOf(dir));
+  addProjectSkill(d, "deploy", "blog");
+  assert.deepEqual(syncProjectLinks(d, repoOf(dir)).removed, ["deploy"]);
+  const exclude = fs.readFileSync(path.join(dir, ".git", "info", "exclude"), "utf8");
+  assert.doesNotMatch(exclude, /deploy|PEKA/);
+});
+
+test("syncProjectLinks leaves a repo's own skill with the same name alone", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "shop");
+  const dir = gitRepo("shop");
+  fs.mkdirSync(path.join(dir, ".claude", "skills", "deploy"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".claude", "skills", "deploy", "SKILL.md"), "mine");
+  assert.deepEqual(syncProjectLinks(d, repoOf(dir)).conflicts, ["deploy"]);
+  assert.equal(fs.readFileSync(path.join(dir, ".claude", "skills", "deploy", "SKILL.md"), "utf8"), "mine");
+});
+
+test("syncProjectLinks never links skills into the PEKA home itself", () => {
+  const { d } = setup();
+  addProjectSkill(d, "deploy", "peka");
+  execFileSync("git", ["init", "-q"], { cwd: d.home });
+  assert.deepEqual(syncProjectLinks(d, repoOf(d.home)), { created: [], removed: [], conflicts: [] });
+  assert.equal(fs.existsSync(path.join(d.home, ".claude")), false);
 });

@@ -19,12 +19,21 @@ import {
   writeJsonAtomic,
 } from "./state.mjs";
 import { classify, isInside, resolveReal } from "./guard.mjs";
-import { applyLifecycle, archiveSkill, listSkills, recordUse, syncLinks, writeCuratorReport } from "./skills.mjs";
+import {
+  applyLifecycle,
+  archiveSkill,
+  globalSkills,
+  listSkills,
+  recordUse,
+  syncLinks,
+  syncProjectLinks,
+  writeCuratorReport,
+} from "./skills.mjs";
 import { buildDigest, writeDigest } from "./digest.mjs";
 import { curatorInstruction, reviewerInstruction, sessionBrief } from "./prompts.mjs";
 import { autoCommit, ensureRepo } from "./git.mjs";
 import { buildIndex } from "./memory-index.mjs";
-import { projectOf } from "./project.mjs";
+import { projectOf, repoOf } from "./project.mjs";
 import { changesSince, commitExists, describe, headCommit, mergeItems, summarize } from "./changes.mjs";
 
 const DAY = 86400000;
@@ -57,10 +66,21 @@ function context(event, text) {
   return { hookSpecificOutput: { hookEventName: event, additionalContext: text } };
 }
 
-function sync(ctx) {
-  const r = syncLinks(ctx.d, ctx.claudeSkillsDir);
-  if (r.conflicts.length) log(ctx.d, `skill name conflicts in ${ctx.claudeSkillsDir}: ${r.conflicts.join(", ")}`);
-  return r.created.length > 0 || r.removed.length > 0;
+// Global skills go into ~/.claude/skills; a project's skills go into the .claude/skills of the
+// repository the session works in, so other projects never list them.
+function sync(ctx, repo = null) {
+  let changed = false;
+  const apply = (dir, r) => {
+    if (r.conflicts.length) log(ctx.d, `skill name conflicts in ${dir}: ${r.conflicts.join(", ")}`);
+    changed ||= r.created.length > 0 || r.removed.length > 0;
+  };
+  apply(ctx.claudeSkillsDir, syncLinks(ctx.d, ctx.claudeSkillsDir, globalSkills(ctx.d)));
+  if (repo) apply(path.join(repo.root, ".claude", "skills"), syncProjectLinks(ctx.d, repo));
+  return changed;
+}
+
+function sessionRepo(ctx, input) {
+  return repoOf(input.cwd, { home: ctx.userHome });
 }
 
 function commit(ctx, message) {
@@ -96,11 +116,11 @@ function sessionStart(input, ctx) {
   ensureRepo(ctx.d.home);
   // Plugin options only reach hooks; the CLI reads them from here.
   writeJsonAtomic(path.join(ctx.d.state, "config.json"), ctx.cfg);
-  let project = null;
+  const repo = sessionRepo(ctx, input);
+  const project = repo?.project ?? null;
   if (typeof input.session_id === "string") {
     const s = loadSession(ctx.d, input.session_id);
-    s.project = projectOf(input.cwd, { home: ctx.userHome });
-    project = s.project;
+    s.project = project;
     saveSession(ctx.d, input.session_id, s);
   }
   markActive(ctx.d, project, ctx.now);
@@ -118,7 +138,7 @@ function sessionStart(input, ctx) {
   }
   buildIndex(ctx.d);
   const out = { hookEventName: "SessionStart", additionalContext: sessionBrief(ctx.d, project) };
-  if (sync(ctx)) out.reloadSkills = true;
+  if (sync(ctx, repo)) out.reloadSkills = true;
   const notice = weeklyNotice(ctx);
   return notice ? { systemMessage: notice, hookSpecificOutput: out } : { hookSpecificOutput: out };
 }
@@ -193,7 +213,7 @@ function postToolUse(input, ctx) {
   }
   if (kind === "skill") {
     s.toolsSinceSkill = 0;
-    sync(ctx);
+    sync(ctx, sessionRepo(ctx, input));
   }
   saveSession(ctx.d, input.session_id, s);
 
@@ -323,7 +343,7 @@ function subagentStop(input, ctx) {
     c.lastRunAt = ctx.now.toISOString();
     saveCurator(ctx.d, c);
   }
-  sync(ctx);
+  sync(ctx, sessionRepo(ctx, input));
   pruneDigests(ctx);
   buildIndex(ctx.d);
   const before = headCommit(ctx.d.home);

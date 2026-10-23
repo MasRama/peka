@@ -95,8 +95,9 @@ approval.
 
 Rules for both: when something only matters in certain projects, set
 `metadata.project` (usually the `Project:` from your prompt; several names separated by
-commas) and name the project in the text, since every project shares this store. Leave
-the tag out for anything true everywhere. Use absolute dates, and never store passwords,
+commas) and name the project in the text, since every project shares this store. A
+tagged skill is listed only in sessions of its projects. Leave the tag out for anything
+true everywhere. Use absolute dates, and never store passwords,
 tokens, or keys — store where the secret lives instead. When asked to tag an existing
 memory or skill, add `project:` under its `metadata:` and change nothing else.
 

@@ -24,17 +24,13 @@ export function isInside(child, parent) {
   return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
-function throughPekaLink(abs, d, claudeSkillsDir) {
-  if (!isInside(abs, claudeSkillsDir) || abs === claudeSkillsDir) return null;
-  const [name, ...rest] = path.relative(claudeSkillsDir, abs).split(path.sep);
-  const link = path.join(claudeSkillsDir, name);
-  try {
-    if (!fs.lstatSync(link).isSymbolicLink()) return null;
-    const target = fs.realpathSync(link);
-    return isInside(target, resolveReal(d.skills)) ? path.join(target, ...rest) : null;
-  } catch {
-    return null;
-  }
+// A write that reaches PEKA's store through a link (in ~/.claude/skills or a project's
+// .claude/skills): the real path, or null.
+function throughPekaLink(abs, d) {
+  const store = resolveReal(d.skills);
+  if (isInside(abs, d.skills) || isInside(abs, store)) return null;
+  const real = resolveReal(abs);
+  return isInside(real, store) ? real : null;
 }
 
 const PEKA_AGENTS = new Set(["peka:reviewer", "peka:curator", "peka:learner"]);
@@ -84,7 +80,7 @@ export function classify(toolName, toolInput, d, claudeSkillsDir, agentType) {
   if (!isWrite && !READ_TOOLS.has(toolName)) return { decision: null };
 
   if (isWrite) {
-    const realTarget = throughPekaLink(path.resolve(expandHome(raw)), d, claudeSkillsDir);
+    const realTarget = throughPekaLink(path.resolve(expandHome(raw)), d);
     if (realTarget) {
       return {
         decision: "deny",

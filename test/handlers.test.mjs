@@ -73,6 +73,22 @@ test("SessionStart creates dirs and asks for a skill reload when links change", 
   assert.equal(handle("SessionStart", { session_id: "a" }, ctx).hookSpecificOutput.reloadSkills, undefined);
 });
 
+test("SessionStart links project skills into the session's repo instead of the global dir", () => {
+  const ctx = make();
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "peka-repo-")), "shop");
+  fs.mkdirSync(dir);
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  fs.mkdirSync(path.join(ctx.d.skills, "deploy"), { recursive: true });
+  fs.writeFileSync(path.join(ctx.d.skills, "deploy", "SKILL.md"), "---\nname: deploy\ndescription: t\nmetadata:\n  project: shop\n---\n");
+  fs.mkdirSync(ctx.claudeSkillsDir, { recursive: true });
+  fs.symlinkSync(path.join(ctx.d.skills, "deploy"), path.join(ctx.claudeSkillsDir, "deploy"));
+  const out = handle("SessionStart", { session_id: "a", cwd: dir }, ctx);
+  assert.equal(out.hookSpecificOutput.reloadSkills, true);
+  assert.equal(fs.existsSync(path.join(ctx.claudeSkillsDir, "deploy")), false);
+  assert.ok(fs.lstatSync(path.join(dir, ".claude", "skills", "deploy")).isSymbolicLink());
+  assert.equal(handle("SessionStart", { session_id: "b", cwd: path.join(os.tmpdir()) }, ctx).hookSpecificOutput.reloadSkills, undefined);
+});
+
 test("SessionStart briefs Claude to use the global memory", () => {
   const ctx = make();
   for (const source of ["startup", "resume", "clear", "compact"]) {

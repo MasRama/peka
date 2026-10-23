@@ -47,8 +47,9 @@ Your prompt gives you:
    - For each untagged item the report lists as mentioning a known project, add
      `project: <name>` under its `metadata:` when it truly applies to that project only.
      A general preference that merely mentions a project stays global.
-   - Skills tagged with a project are aged by the days that project is worked on; do not
-     archive them for being unused while their project is idle.
+   - Skills tagged with a project are listed only in that project's sessions and aged by
+     the days that project is worked on; do not archive them for being unused while
+     their project is idle.
 5. **Request archives.** Write the actions file as JSON:
 
    ```json

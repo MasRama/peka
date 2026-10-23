@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { normalizeProject, projectOf } from "../scripts/lib/project.mjs";
+import { normalizeProject, projectOf, repoOf } from "../scripts/lib/project.mjs";
 import { projectsOf, readFrontmatter } from "../scripts/lib/frontmatter.mjs";
 
 function git(cwd, ...args) {
@@ -73,4 +73,15 @@ test("projectsOf splits, normalizes, and dedups project tags", () => {
   assert.deepEqual(projectsOf({ project: "" }), []);
   assert.deepEqual(projectsOf({}), []);
   assert.deepEqual(projectsOf(readFrontmatter("no frontmatter")), []);
+});
+
+test("repoOf gives the project, the checkout root, and the exclude file of the main repository", () => {
+  const { root, dir } = repo("wajom-client");
+  const wt = path.join(root, "feat-x");
+  git(dir, "worktree", "add", "-q", wt);
+  const r = repoOf(wt);
+  assert.equal(r.project, "wajom-client");
+  assert.equal(r.root, fs.realpathSync(wt));
+  assert.equal(r.exclude, path.join(fs.realpathSync(dir), ".git", "info", "exclude"));
+  assert.equal(repoOf(fs.mkdtempSync(path.join(os.tmpdir(), "peka-nogit-")), { home: os.homedir() }), null);
 });

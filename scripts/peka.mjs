@@ -18,7 +18,15 @@ import {
 } from "./lib/state.mjs";
 import { applySettings, SettingsParseError } from "./lib/settings.mjs";
 import { autoCommit, ensureRepo } from "./lib/git.mjs";
-import { listSkills, skillAge, skillProjects, syncLinks, untaggedCandidates, writeCuratorReport } from "./lib/skills.mjs";
+import {
+  globalSkills,
+  listSkills,
+  skillAge,
+  skillProjects,
+  syncLinks,
+  untaggedCandidates,
+  writeCuratorReport,
+} from "./lib/skills.mjs";
 import { buildDigest, writeDigest } from "./lib/digest.mjs";
 import { searchTranscripts } from "./lib/search.mjs";
 import { curatorInstruction, learnerInstruction, reviewerInstruction } from "./lib/prompts.mjs";
@@ -92,7 +100,7 @@ function setup(args) {
     ensureDirs(d);
     ensureRepo(d.home);
     writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.5", at: now.toISOString(), memoryDir });
-    syncLinks(d, path.join(claude, "skills"));
+    syncLinks(d, path.join(claude, "skills"), globalSkills(d));
     out(
       `PEKA is set up. Home: ${d.home}`,
       r.changes.length ? `Changed ${settingsFile}:` : `${settingsFile} already had the right values.`,
@@ -184,7 +192,7 @@ function skillGroups(skills, usage, conflicts) {
   }
   const ordered = [...groups].filter(([, list]) => list.length).sort(([a], [b]) => (a === "Global" ? -1 : b === "Global" ? 1 : a.localeCompare(b)));
   return ordered.flatMap(([heading, list]) => [
-    `  ${heading}:`,
+    heading === "Global" ? "  Global (every session):" : `  ${heading} (only in that project):`,
     ...list.map((name) => {
       const fm = frontmatterOf(path.join(d.skills, name, "SKILL.md"));
       const u = usage.skills[name] ?? {};
@@ -323,7 +331,7 @@ function adopt(name) {
     if (fs.existsSync(src) && fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
     throw err;
   }
-  syncLinks(d, claudeSkills);
+  syncLinks(d, claudeSkills, [...new Set([...globalSkills(d), name])]);
   if (!fs.lstatSync(src, { throwIfNoEntry: false })?.isSymbolicLink()) {
     fs.rmSync(src, { force: true });
     fs.renameSync(backup, src);
