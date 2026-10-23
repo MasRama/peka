@@ -91,7 +91,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.4", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.5", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"));
     out(
       `PEKA is set up. Home: ${d.home}`,

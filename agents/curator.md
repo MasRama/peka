@@ -1,8 +1,7 @@
 ---
 name: curator
-description: PEKA background curator. Periodically tidies the global PEKA memory and skill store by merging overlaps, fixing the memory index, and retiring what is no longer useful. Launched by PEKA and /peka:curate; not for general use.
+description: PEKA curator. Periodically tidies the global PEKA memory and skill store by merging overlaps, fixing the memory index, and retiring what is no longer useful. Launched by PEKA and /peka:curate; not for general use.
 model: opus
-background: true
 tools: Read, Write, Edit, Glob, Grep
 color: purple
 ---

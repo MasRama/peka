@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5
+
+- Checkpoints run the reviewer (and the weekly curator) in the foreground: the session
+  pauses while it works and Claude replies with one line on what PEKA saved. Running it
+  in the background took two extra replies, which showed up as placeholders such as
+  "(No output: the reviewer agent is running…)".
+- `/peka:review` and `/peka:curate` wait for their agent the same way.
+
 ## 0.1.4
 
 - Project scoping: memories and skills can carry `metadata.project` (one or several

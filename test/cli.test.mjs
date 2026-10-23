@@ -147,7 +147,7 @@ test("review builds a digest for the session and prints the launch instruction",
   const r = s.run("review", "--session", "abc-123");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /peka:reviewer/);
-  assert.match(r.stdout, /run_in_background/);
+  assert.match(r.stdout, /run_in_background: false/);
   const digest = r.stdout.match(/Digest: (\S+)/)[1];
   assert.match(fs.readFileSync(digest, "utf8"), /stop using npm/);
   const sess = JSON.parse(fs.readFileSync(path.join(s.home, "state", "sessions", "abc-123.json"), "utf8"));

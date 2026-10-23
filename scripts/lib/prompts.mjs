@@ -9,13 +9,12 @@ function modelLine(model) {
 
 function launch(agent, model, lead, fields) {
   return [
-    `${lead} Launch the \`${agent}\` agent now with run_in_background: true. ${modelLine(model)}`,
-    `Do not do this work yourself and do not wait for the agent. Give it exactly this prompt:`,
+    `${lead} Launch the \`${agent}\` agent now with run_in_background: false and wait for it. ${modelLine(model)}`,
+    `Do not do this work yourself. Give it exactly this prompt:`,
     ``,
     ...fields,
     ``,
-    `After launching it, end your turn without further output.`,
-    `When the agent finishes, do not comment on it or summarize it unless the user asks.`,
+    `When it finishes, end your turn with exactly one short line saying what PEKA saved or changed, for example "PEKA: saved 1 memory, updated skill deploy-app." or "PEKA: nothing new to save." Write nothing else.`,
   ].join("\n");
 }
 

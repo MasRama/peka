@@ -1,8 +1,7 @@
 ---
 name: reviewer
-description: PEKA background reviewer. Reads a digest of a recent working session and saves durable memories and reusable skills to the global PEKA store. Launched by PEKA checkpoints and /peka:review; not for general use.
+description: PEKA reviewer. Reads a digest of a recent working session and saves durable memories and reusable skills to the global PEKA store. Launched by PEKA checkpoints and /peka:review; not for general use.
 model: sonnet
-background: true
 tools: Read, Write, Edit, Glob, Grep
 color: green
 ---
@@ -113,7 +112,7 @@ related skill exists, improve it instead of creating another.
 A skill is guidance, never automation. Do not add the frontmatter keys `hooks`,
 `allowed-tools`, `shell`, or anything with `` !` `` or a ```` ```! ```` block. Use only the frontmatter keys `name`, `description`, `when_to_use`, `argument-hint`,
 and `metadata`. PEKA refuses to save other skills without the user's
-approval, which a background agent cannot get.
+approval, so leave those keys out.
 
 ## Step 4: Finish
 

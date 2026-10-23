@@ -152,13 +152,13 @@ test("Stop below the intervals does nothing", () => {
   assert.equal(handle("Stop", stopInput(), ctx), null);
 });
 
-test("Stop at the memory interval asks for a background review", () => {
+test("Stop at the memory interval asks for a review", () => {
   const ctx = make();
   saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 3, lastDigestLine: 0 });
   const out = handle("Stop", stopInput(), ctx);
   const text = out.hookSpecificOutput.additionalContext;
   assert.equal(out.hookSpecificOutput.hookEventName, "Stop");
-  for (const needle of ["peka:reviewer", "run_in_background", "sonnet", ctx.d.memory, ctx.d.skills, "Focus: memory"]) {
+  for (const needle of ["peka:reviewer", "run_in_background: false", "sonnet", ctx.d.memory, ctx.d.skills, "Focus: memory"]) {
     assert.ok(text.includes(needle), `missing ${needle}`);
   }
   const digest = text.match(/Digest: (\S+)/)[1];
@@ -203,7 +203,7 @@ test("curator seeds first, fires after 7 days, waits 24 h before asking again", 
   assert.equal(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 6 * DAY))), null);
   const out = handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 7 * DAY)));
   const text = out.hookSpecificOutput.additionalContext;
-  for (const needle of ["peka:curator", "opus", path.join(ctx.d.state, "curator-report.md"), "run_in_background"]) {
+  for (const needle of ["peka:curator", "opus", path.join(ctx.d.state, "curator-report.md"), "run_in_background: false"]) {
     assert.ok(text.includes(needle), `missing ${needle}`);
   }
   assert.ok(fs.existsSync(path.join(ctx.d.state, "curator-report.md")));
@@ -311,13 +311,15 @@ test("PostToolUse still resets the skill counter when the user approved a skill 
   assert.equal(loadSession(ctx.d, "s1").toolsSinceSkill, 0);
 });
 
-test("launch instructions keep the main agent quiet and handle inherit", () => {
+test("launch instructions run the agent in the foreground, end in one line, and handle inherit", () => {
   const ctx = make({ env: { CLAUDE_PLUGIN_OPTION_REVIEWER_MODEL: "inherit" } });
   saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 0, lastDigestLine: 0 });
   const text = handle("Stop", stopInput(), ctx).hookSpecificOutput.additionalContext;
   assert.match(text, /same model you are running on/);
   assert.doesNotMatch(text, /Do not set a model/);
-  assert.match(text, /When the agent finishes, do not comment on it/);
+  assert.match(text, /run_in_background: false and wait for it/);
+  assert.doesNotMatch(text, /run_in_background: true|do not wait/);
+  assert.match(text, /end your turn with exactly one short line/);
 });
 
 test("headless runs never get a checkpoint, interactive hosts still do", () => {

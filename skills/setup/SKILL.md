@@ -13,7 +13,8 @@ allowed-tools:
 2. Explain to the user, briefly and in their language:
    - PEKA keeps one global memory and a library of learned skills in `~/.peka`, shared by
      every project, with local git history as a safety net.
-   - Every few turns a background reviewer agent saves what is worth remembering, and
+   - Every few turns a reviewer agent saves what is worth remembering (the session pauses
+     briefly while it works and ends with one line on what it saved), and
      about once a week a curator agent tidies it. Both run as normal Claude Code
      subagents and count toward usage like any other subagent.
    - The exact settings changes listed in the check output. A backup of `settings.json`
