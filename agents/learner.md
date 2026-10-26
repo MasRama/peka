@@ -63,7 +63,8 @@ metadata:
 
 Do not edit `MEMORY.md` or anything under `memory/projects/`; PEKA builds the index from
 each memory's `name`, `description`, and `metadata.project`. Keep the description to one
-short line, since it is the index line.
+short line, since it is the index line, and make it state the fact itself rather than
+only when it is relevant.
 
 **Skill**: `<Skills dir>/<kebab-name>/SKILL.md`, always under `Skills dir`, never under
 `~/.claude/skills`.
@@ -87,6 +88,11 @@ metadata:
 Write the skill for the class of task, not the one incident: replace one-off values
 with what they stand for, and keep the real values that will not change (a host name,
 a command) where they matter.
+
+Size budgets: PEKA refuses a write that would grow a memory past 2,500 characters or a
+skill file past 6,000 characters. When updating an existing memory or skill, rewrite it
+so it says what is true now; do not append dated notes or session history. If it is
+already near the limit, tighten it while you add the new point.
 
 A skill is guidance, never automation. Do not add the frontmatter keys `hooks`,
 `allowed-tools`, `shell`, or anything with `` !` `` or a ```` ```! ```` block. Use only the frontmatter keys `name`, `description`, `when_to_use`, `argument-hint`,

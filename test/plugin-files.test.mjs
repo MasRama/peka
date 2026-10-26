@@ -122,3 +122,16 @@ test("agent prompts leave the index to PEKA and tag projects", () => {
   }
   assert.match(fs.readFileSync(path.join(root, "agents", "curator.md"), "utf8"), /another machine/);
 });
+
+test("agent prompts keep the store small: size budgets, rewrite instead of append", () => {
+  for (const name of agents) {
+    const body = fs.readFileSync(path.join(root, "agents", `${name}.md`), "utf8");
+    assert.match(body, /2,500 characters/, name);
+    assert.match(body, /6,000 characters/, name);
+    assert.match(body, /[Rr]ewrite/, name);
+  }
+  const reviewer = fs.readFileSync(path.join(root, "agents", "reviewer.md"), "utf8");
+  assert.match(reviewer, /Most checkpoints save nothing/);
+  assert.match(reviewer, /make a mistake without it/);
+  assert.match(reviewer, /uncommitted/);
+});
