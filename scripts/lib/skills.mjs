@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { isInside } from "./guard.mjs";
+import { isInside, MEMORY_MAX_CHARS, SKILL_MAX_CHARS } from "./guard.mjs";
 import { projectsOf, readFrontmatter } from "./frontmatter.mjs";
 import { loadProjects, localDate } from "./state.mjs";
 import { readMemories } from "./memory-index.mjs";
@@ -218,15 +218,19 @@ function memoryStats(d) {
 const PATH_TOKEN = /(?<![\w:@/.~-])(~\/[^\s`'"()<>[\]]+|\/[\w.-]+(?:\/[^\s`'"()<>[\]]*)+)/g;
 const MAX_MISSING = 50;
 
-// Local paths a memory mentions that no longer exist. Lines about ssh, URLs, and host:path
-// forms are skipped, since those paths live on other machines.
+// Lines that talk about another machine: their paths live there, not here.
+const REMOTE_LINE = /\b(ssh|server|host|pm2|staging|production|prod)\b|\w@[\w-]+(\.[\w-]+)+/i;
+
+// Local paths a memory mentions that no longer exist. Lines about other machines are skipped,
+// and so are absolute paths whose top folder is not on this machine (URL routes like /api/x).
 export function missingPaths(text, home) {
   const found = [];
   for (const line of String(text).split("\n")) {
-    if (/\bssh\b/i.test(line)) continue;
+    if (REMOTE_LINE.test(line)) continue;
     for (const [token] of line.matchAll(PATH_TOKEN)) {
       const p = token.replace(/[.,;:!?'"`)\]]+$/, "");
       if (p.split("/").filter(Boolean).length < 2) continue;
+      if (!p.startsWith("~/") && !fs.existsSync(`/${p.split("/")[1]}`)) continue;
       const abs = p.startsWith("~/") ? path.join(home, p.slice(2)) : p;
       if (!fs.existsSync(abs) && !found.includes(p)) found.push(p);
     }
@@ -238,9 +242,17 @@ function bodyOf(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
-function mentions(text, project) {
+function mentionCount(text, project) {
   const escaped = project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "i").test(text);
+  return (String(text).match(new RegExp(`(?<![a-z0-9])${escaped}(?![a-z0-9])`, "gi")) ?? []).length;
+}
+
+// An item is about a project when its name or description names it, or its body names it more
+// than once. A single passing mention ("seen first in X") is not enough.
+function about(item, project) {
+  const fm = readFrontmatter(item.text);
+  if (mentionCount(`${item.name} ${fm.description ?? ""}`, project)) return true;
+  return mentionCount(bodyOf(item.text), project) >= 2;
 }
 
 function section(title, items) {
@@ -278,12 +290,24 @@ function knownProjects(d, { skills, memories }) {
 export function untaggedCandidates(d, items = storeItems(d)) {
   const { known } = knownProjects(d, items);
   return [
-    ...items.memories.filter((m) => !m.projects.length).map((m) => ({ label: `memory ${m.file}`, text: m.raw })),
-    ...items.skills.filter((k) => !k.tags.length).map((k) => ({ label: `skill ${k.name}`, text: k.raw })),
+    ...items.memories
+      .filter((m) => !m.projects.length)
+      .map((m) => ({ label: `memory ${m.file}`, name: m.file.replace(/\.md$/, ""), text: m.raw })),
+    ...items.skills.filter((k) => !k.tags.length).map((k) => ({ label: `skill ${k.name}`, name: k.name, text: k.raw })),
   ]
-    .map(({ label, text }) => ({ label, hits: known.filter((p) => mentions(text, p)) }))
+    .map((item) => ({ label: item.label, hits: known.filter((p) => about(item, p)) }))
     .filter((x) => x.hits.length)
     .map((x) => `${x.label}: ${x.hits.join(", ")}`);
+}
+
+// Skills and memories past their size budget: usually a session log that should be rewritten.
+export function oversizedItems(d, { skills, memories } = storeItems(d)) {
+  return [
+    ...skills.filter((k) => k.raw.length > SKILL_MAX_CHARS).map((k) => `skill ${k.name}: ${k.raw.length} characters (budget ${SKILL_MAX_CHARS})`),
+    ...memories
+      .filter((m) => m.raw.length > MEMORY_MAX_CHARS)
+      .map((m) => `memory ${m.file}: ${m.raw.length} characters (budget ${MEMORY_MAX_CHARS})`),
+  ];
 }
 
 // Claude Code lists every global skill in every session and shortens the descriptions once the
@@ -330,6 +354,7 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     .flatMap((m) => missingPaths(bodyOf(m.raw), home).map((p) => `${m.file}: ${p}`))
     .slice(0, MAX_MISSING);
 
+  const oversized = oversizedItems(d, items);
   const stats = memoryStats(d);
   const text = [
     `# PEKA curator report (${now.toISOString().slice(0, 10)})`,
@@ -350,6 +375,7 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
       "Project tags with no recorded activity",
       [...tagged].filter((p) => !projects[p]).sort(),
     ),
+    ...section("Over the size budget (rewrite shorter)", oversized),
     ...section("Untagged memories and skills that mention a known project", untagged),
     ...section("Memories mentioning missing local paths", missing),
     "",

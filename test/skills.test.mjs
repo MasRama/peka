@@ -245,6 +245,40 @@ test("missingPaths reports local paths that do not exist and skips remote ones",
   assert.deepEqual(missingPaths(text, home), [`${home}/gone/dir`, "~/missing/notes.md", "/etc/peka-nope/x.json"]);
 });
 
+test("missingPaths skips URL routes and paths on servers", async () => {
+  const { missingPaths } = await import("../scripts/lib/skills.mjs");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "peka-home-"));
+  const text = [
+    "The page calls /api/clock and /v2/campaigns/list.",
+    "On the staging server, keep ~/elkaem/.env untouched.",
+    "pm2 runs it from ~/dripsender-portal/current.",
+    "Served from ren@johor.wajom.co, folder ~/kaffah-note/app.",
+    "Locally the notes are in ~/gone/notes.md.",
+  ].join("\n");
+  assert.deepEqual(missingPaths(text, home), ["~/gone/notes.md"]);
+});
+
+test("untaggedCandidates needs more than a passing mention in the body", async () => {
+  const { untaggedCandidates } = await import("../scripts/lib/skills.mjs");
+  const { d } = setup();
+  fs.writeFileSync(path.join(d.state, "projects.json"), JSON.stringify({ "wajom-portal": { activeDays: [] }, stoko: { activeDays: [] } }));
+  const mem = (name, description, body) =>
+    fs.writeFileSync(path.join(d.memory, `${name}.md`), `---\nname: ${name}\ndescription: ${description}\nmetadata:\n  type: user\n---\n${body}\n`);
+  mem("language", "Ren writes Indonesian", "Seen first in wajom-portal.");
+  mem("stoko-concept", "Product concept", "Name chosen.");
+  mem("deploy-notes", "Where things run", "stoko runs on johor. The stoko admin was created by hand.");
+  assert.deepEqual(untaggedCandidates(d), ["memory deploy-notes.md: stoko", "memory stoko-concept.md: stoko"]);
+});
+
+test("writeCuratorReport lists memories and skills over their size budget", () => {
+  const { d } = setup();
+  addSkill(d, "fat");
+  fs.writeFileSync(path.join(d.skills, "fat", "SKILL.md"), "---\nname: fat\ndescription: d\n---\n" + "x".repeat(7000));
+  fs.writeFileSync(path.join(d.memory, "long.md"), "---\nname: long\ndescription: d\n---\n" + "y".repeat(3000));
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /## Over the size budget \(rewrite shorter\)\n\n- skill fat: \d+ characters \(budget 6000\)\n- memory long\.md: \d+ characters \(budget 2500\)/);
+});
+
 test("writeCuratorReport adds projects, age, untagged candidates, missing paths, and overflow", () => {
   const { d } = setup();
   const home = path.dirname(d.home);

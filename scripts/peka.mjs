@@ -21,6 +21,7 @@ import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import {
   globalSkills,
   listingSummary,
+  oversizedItems,
   listSkills,
   skillAge,
   skillProjects,
@@ -237,6 +238,10 @@ function status() {
     `Review every ${cfg.memoryInterval} turns (memory) / ${cfg.skillInterval} tool calls (skills); reviewer ${cfg.reviewerModel}, curator ${cfg.curatorModel}, auto-commit ${cfg.autoCommit ? "on" : "off"}`,
     "Open one in full with /peka:status show <name>.",
   );
+  const oversized = oversizedItems(d);
+  if (oversized.length) {
+    out(`Over the size budget (the curator rewrites these shorter): ${oversized.length}`, ...oversized.map((i) => `  - ${i}`));
+  }
   if (conflicts.length) out(`Name conflicts (a skill of yours already uses the name, PEKA left it alone): ${conflicts.join(", ")}`);
   const outside = unmanagedSkills().length;
   if (outside) out(`Skills outside PEKA: ${outside} (see /peka:audit)`);
