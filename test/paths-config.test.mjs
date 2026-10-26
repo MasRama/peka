@@ -38,7 +38,7 @@ test("dirs layout", () => {
 test("loadConfig defaults", () => {
   assert.deepEqual(loadConfig({}), {
     memoryInterval: 10,
-    skillInterval: 20,
+    skillInterval: 60,
     reviewerModel: "sonnet",
     curatorModel: "opus",
     autoCommit: true,
@@ -78,7 +78,7 @@ test("loadConfig rejects invalid values", () => {
     CLAUDE_PLUGIN_OPTION_AUTO_COMMIT: "maybe",
   });
   assert.equal(cfg.memoryInterval, 10);
-  assert.equal(cfg.skillInterval, 20);
+  assert.equal(cfg.skillInterval, 60);
   assert.equal(cfg.reviewerModel, "sonnet");
   assert.equal(cfg.autoCommit, true);
 });

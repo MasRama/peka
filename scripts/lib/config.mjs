@@ -31,7 +31,7 @@ function bool(raw, fallback) {
 export function loadConfig(env = process.env) {
   return {
     memoryInterval: interval(option(env, "MEMORY_INTERVAL"), 10),
-    skillInterval: interval(option(env, "SKILL_INTERVAL"), 20),
+    skillInterval: interval(option(env, "SKILL_INTERVAL"), 60),
     reviewerModel: model(option(env, "REVIEWER_MODEL"), "sonnet"),
     curatorModel: model(option(env, "CURATOR_MODEL"), "opus"),
     autoCommit: bool(option(env, "AUTO_COMMIT"), true),
