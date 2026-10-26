@@ -83,7 +83,8 @@ test("no file mentions the project PEKA was inspired by", () => {
   const banned = new RegExp(["her", "mes"].join(""), "i");
   const walk = (dir) =>
     fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-      if ([".git", "node_modules", ".superpowers"].includes(e.name)) return [];
+      // PEKA links project skills into .claude/skills; those links point outside the repo.
+      if ([".git", "node_modules", ".superpowers"].includes(e.name) || e.isSymbolicLink()) return [];
       const p = path.join(dir, e.name);
       return e.isDirectory() ? walk(p) : [p];
     });
