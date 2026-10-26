@@ -21,7 +21,7 @@
       "type": "number",
       "title": "Skill review interval",
       "description": "Tool calls without a skill write before PEKA runs a background review. 0 turns it off.",
-      "default": 20,
+      "default": 60,
       "min": 0,
       "max": 1000
     },

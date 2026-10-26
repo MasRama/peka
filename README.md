@@ -77,23 +77,40 @@ Start a new session afterwards.
    procedure) and files it without duplicates.
 2. **Counting.** Hooks count your turns since Claude last saved a memory and tool calls
    since it last saved a skill.
-3. **Checkpoint.** When a counter reaches its interval (10 turns / 20 tool calls by
+3. **Checkpoint.** When a counter reaches its interval (10 turns / 60 tool calls by
    default), PEKA writes a compact digest of the recent conversation and asks Claude to
    run the `peka:reviewer` agent and wait for it. The session pauses while the reviewer
    works, then Claude replies with one line such as `PEKA: saved 1 memory.` (In the
    background it would take two replies, one when it starts and one when Claude Code
    reports that it finished.)
 4. **Review.** The reviewer reads the digest and your existing memory, then saves or
-   updates memories and skills. It has no shell access: it can only read files and edit
-   files inside `~/.peka`.
+   updates memories and skills, or, most of the time, nothing: it keeps only what a
+   future session would get wrong without it (a correction, a preference, a fact the code
+   does not record, a procedure that took trial and error), never progress notes or what
+   was just built. It has no shell access: it can only read files and edit files inside
+   `~/.peka`.
 5. **Commit.** When the reviewer finishes, PEKA links new skills (global ones into
    `~/.claude/skills`, project ones into the repository's `.claude/skills`) and commits `~/.peka` to its local git repository.
 6. **Curate.** About once a week the `peka:curator` agent merges overlapping skills and
    memories, tags project-specific ones, and checks memories that mention local paths
-   that no longer exist. Skills unused for 14 days are marked stale and archived after
-   30, unless you pin them. For a skill tagged with a project, only days you actually
+   that no longer exist, and rewrites items over their size budget shorter. Skills unused
+   for 14 days are marked stale and archived after 30, unless you pin them; a skill that
+   was never used at all is archived after 10 days. For a skill tagged with a project, only days you actually
    worked on that project count, so a deploy procedure is not lost while its project
    sits idle.
+
+### Keeping the store small
+
+Everything PEKA saves is loaded into later sessions, so it saves little and keeps it short:
+
+- **A bar for saving.** The reviewer saves nothing unless a future session would make a
+  mistake without it. Most checkpoints end with `PEKA: nothing new to save.`
+- **Size budgets.** A memory file holds at most 2,500 characters and a skill file at most
+  6,000. A write that would grow a file past that is refused with a request to rewrite it
+  shorter; updates replace what changed instead of appending history. Files that are
+  already too long may only shrink, and `/peka:status` and the curator report list them.
+- **Unused skills go first.** A skill nobody has used is archived after 10 days (10 active
+  days of its project for a project skill). Archived items stay in `archive/` and git.
 
 ### Projects and the index
 
@@ -191,7 +208,7 @@ Set when you enable the plugin, and editable later in `/config`:
 | Option | Default | Meaning |
 |---|---|---|
 | `memory_interval` | `10` | your turns without a saved memory before a review (`0` = off) |
-| `skill_interval` | `20` | tool calls without a saved skill before a review (`0` = off) |
+| `skill_interval` | `60` | tool calls without a saved skill before a review (`0` = off) |
 | `reviewer_model` | `sonnet` | `sonnet`, `opus`, `haiku`, or `inherit` |
 | `curator_model` | `opus` | `sonnet`, `opus`, `haiku`, or `inherit` |
 | `auto_commit` | `true` | commit `~/.peka` after each review |
