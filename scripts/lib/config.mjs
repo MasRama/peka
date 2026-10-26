@@ -31,13 +31,16 @@ function bool(raw, fallback) {
 export function loadConfig(env = process.env) {
   return {
     memoryInterval: interval(option(env, "MEMORY_INTERVAL"), 10),
-    skillInterval: interval(option(env, "SKILL_INTERVAL"), 20),
+    skillInterval: interval(option(env, "SKILL_INTERVAL"), 60),
     reviewerModel: model(option(env, "REVIEWER_MODEL"), "sonnet"),
     curatorModel: model(option(env, "CURATOR_MODEL"), "opus"),
     autoCommit: bool(option(env, "AUTO_COMMIT"), true),
     curatorIntervalDays: 7,
     staleAfterDays: 14,
     archiveAfterDays: 30,
+    // A skill nobody has used yet was probably not worth saving; retire it sooner.
+    unusedStaleAfterDays: 7,
+    unusedArchiveAfterDays: 10,
     learningNotice: notice(option(env, "LEARNING_NOTICE")),
   };
 }

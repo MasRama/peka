@@ -1,6 +1,6 @@
 {
   "name": "peka",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Your coding agent learns from experience. Global memory and background learning for Claude Code.",
   "type": "module",

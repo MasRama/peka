@@ -21,6 +21,7 @@ import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import {
   globalSkills,
   listingSummary,
+  oversizedItems,
   listSkills,
   skillAge,
   skillProjects,
@@ -100,7 +101,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.6", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.7", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"), globalSkills(d));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -237,6 +238,10 @@ function status() {
     `Review every ${cfg.memoryInterval} turns (memory) / ${cfg.skillInterval} tool calls (skills); reviewer ${cfg.reviewerModel}, curator ${cfg.curatorModel}, auto-commit ${cfg.autoCommit ? "on" : "off"}`,
     "Open one in full with /peka:status show <name>.",
   );
+  const oversized = oversizedItems(d);
+  if (oversized.length) {
+    out(`Over the size budget (the curator rewrites these shorter): ${oversized.length}`, ...oversized.map((i) => `  - ${i}`));
+  }
   if (conflicts.length) out(`Name conflicts (a skill of yours already uses the name, PEKA left it alone): ${conflicts.join(", ")}`);
   const outside = unmanagedSkills().length;
   if (outside) out(`Skills outside PEKA: ${outside} (see /peka:audit)`);

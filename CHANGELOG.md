@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.7
+
+- Saving nothing is the reviewer's default. It keeps only what a future session would
+  get wrong without it (a correction or preference, an environment fact the code does not
+  record, a procedure that took trial and error) and never saves progress, status
+  ("still uncommitted"), dated narration of a session, or a one-off incident.
+- Size budgets: a memory file holds at most 2,500 characters and a skill file at most
+  6,000. Writes that would grow a file past its budget are refused with a request to
+  rewrite it shorter; files already over budget may only shrink. Updates rewrite what
+  changed instead of appending history.
+- `/peka:status` and the curator report list items over their budget, and the curator
+  rewrites them shorter.
+- The skill checkpoint fires every 60 tool calls instead of 20 (`skill_interval`).
+- Skills that were never used are archived after 10 days (stale after 7) instead of 30;
+  project skills count the active days of their project.
+- Curator report: missing-path checks skip URL routes and paths on servers, and
+  project-tag suggestions need more than one passing mention.
+
 ## 0.1.6
 
 - Project skills are listed only inside their project. A skill tagged with

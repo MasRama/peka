@@ -88,6 +88,7 @@ test("applyLifecycle seeds, stales at 14 days, archives at 30 days", () => {
   applyLifecycle(d, usage, t0, cfg);
   assert.equal(usage.skills.s.created, t0.toISOString());
   assert.equal(usage.skills.s.state, "active");
+  recordUse(usage, "s", t0.toISOString());
 
   assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 13 * DAY), cfg).stale, []);
   assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 14 * DAY), cfg).stale, ["s"]);
@@ -99,6 +100,26 @@ test("applyLifecycle seeds, stales at 14 days, archives at 30 days", () => {
   assert.ok(fs.existsSync(path.join(d.archive, "s", "SKILL.md")));
   assert.deepEqual(listSkills(d), []);
   assert.deepEqual(syncLinks(d, claudeSkills).removed, ["s"]);
+});
+
+test("a skill that was never used goes stale after 7 days and is archived after 10", () => {
+  const { d } = setup();
+  addSkill(d, "unused");
+  const t0 = new Date("2026-01-01T00:00:00Z");
+  const usage = { skills: { unused: { created: t0.toISOString(), uses: 0, state: "active" } } };
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 6 * DAY), cfg).stale, []);
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 7 * DAY), cfg).stale, ["unused"]);
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 10 * DAY), cfg).archived, ["unused"]);
+});
+
+test("a project skill that was never used is archived after 10 active days of its project", () => {
+  const { d } = setup();
+  addProjectSkill(d, "fix", "wajom-portal");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { fix: { created: t0.toISOString(), uses: 0, state: "active" } } };
+  const late = new Date(t0.getTime() + 90 * DAY);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 9) } }).archived, []);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 10) } }).archived, ["fix"]);
 });
 
 test("applyLifecycle reactivates a stale skill that was used", () => {
@@ -222,6 +243,40 @@ test("missingPaths reports local paths that do not exist and skips remote ones",
     "Single segment /tmp is ignored.",
   ].join("\n");
   assert.deepEqual(missingPaths(text, home), [`${home}/gone/dir`, "~/missing/notes.md", "/etc/peka-nope/x.json"]);
+});
+
+test("missingPaths skips URL routes and paths on servers", async () => {
+  const { missingPaths } = await import("../scripts/lib/skills.mjs");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "peka-home-"));
+  const text = [
+    "The page calls /api/clock and /v2/campaigns/list.",
+    "On the staging server, keep ~/elkaem/.env untouched.",
+    "pm2 runs it from ~/dripsender-portal/current.",
+    "Served from ren@johor.wajom.co, folder ~/kaffah-note/app.",
+    "Locally the notes are in ~/gone/notes.md.",
+  ].join("\n");
+  assert.deepEqual(missingPaths(text, home), ["~/gone/notes.md"]);
+});
+
+test("untaggedCandidates needs more than a passing mention in the body", async () => {
+  const { untaggedCandidates } = await import("../scripts/lib/skills.mjs");
+  const { d } = setup();
+  fs.writeFileSync(path.join(d.state, "projects.json"), JSON.stringify({ "wajom-portal": { activeDays: [] }, stoko: { activeDays: [] } }));
+  const mem = (name, description, body) =>
+    fs.writeFileSync(path.join(d.memory, `${name}.md`), `---\nname: ${name}\ndescription: ${description}\nmetadata:\n  type: user\n---\n${body}\n`);
+  mem("language", "Ren writes Indonesian", "Seen first in wajom-portal.");
+  mem("stoko-concept", "Product concept", "Name chosen.");
+  mem("deploy-notes", "Where things run", "stoko runs on johor. The stoko admin was created by hand.");
+  assert.deepEqual(untaggedCandidates(d), ["memory deploy-notes.md: stoko", "memory stoko-concept.md: stoko"]);
+});
+
+test("writeCuratorReport lists memories and skills over their size budget", () => {
+  const { d } = setup();
+  addSkill(d, "fat");
+  fs.writeFileSync(path.join(d.skills, "fat", "SKILL.md"), "---\nname: fat\ndescription: d\n---\n" + "x".repeat(7000));
+  fs.writeFileSync(path.join(d.memory, "long.md"), "---\nname: long\ndescription: d\n---\n" + "y".repeat(3000));
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /## Over the size budget \(rewrite shorter\)\n\n- skill fat: \d+ characters \(budget 6000\)\n- memory long\.md: \d+ characters \(budget 2500\)/);
 });
 
 test("writeCuratorReport adds projects, age, untagged candidates, missing paths, and overflow", () => {

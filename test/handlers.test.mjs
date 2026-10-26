@@ -164,7 +164,7 @@ test("PostToolUse records use of PEKA skills by Skill tool and by Read", () => {
 
 test("Stop below the intervals does nothing", () => {
   const ctx = make();
-  saveSession(ctx.d, "s1", { turnsSinceMemory: 9, toolsSinceSkill: 19, lastDigestLine: 0 });
+  saveSession(ctx.d, "s1", { turnsSinceMemory: 9, toolsSinceSkill: 59, lastDigestLine: 0 });
   assert.equal(handle("Stop", stopInput(), ctx), null);
 });
 
@@ -187,7 +187,7 @@ test("Stop at the memory interval asks for a review", () => {
 
 test("Stop asks for both when both counters are due and honors the model setting", () => {
   const ctx = make({ env: { CLAUDE_PLUGIN_OPTION_REVIEWER_MODEL: "haiku" } });
-  saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 20, lastDigestLine: 0 });
+  saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 60, lastDigestLine: 0 });
   const text = handle("Stop", stopInput(), ctx).hookSpecificOutput.additionalContext;
   assert.match(text, /Focus: memory and skills/);
   assert.match(text, /haiku/);
@@ -341,7 +341,7 @@ test("launch instructions run the agent in the foreground, end in one line, and 
 test("headless runs never get a checkpoint, interactive hosts still do", () => {
   for (const entrypoint of ["sdk-cli", "claude-code-github-action", "mcp"]) {
     const ctx = make({ env: { CLAUDE_CODE_ENTRYPOINT: entrypoint } });
-    saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 20, lastDigestLine: 0 });
+    saveSession(ctx.d, "s1", { turnsSinceMemory: 10, toolsSinceSkill: 60, lastDigestLine: 0 });
     assert.equal(handle("Stop", stopInput(), ctx), null, entrypoint);
     assert.equal(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 30 * DAY))), null, `${entrypoint} curator`);
   }

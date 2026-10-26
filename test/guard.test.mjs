@@ -174,3 +174,39 @@ test("each PEKA agent may write only its own actions file", () => {
   assert.equal(classify("Write", { file_path: cur }, d, claudeSkills, "peka:learner").decision, null);
   assert.equal(classify("Write", { file_path: lrn }, d, claudeSkills, "peka:curator").decision, null);
 });
+
+test("refuses writes that grow a memory or skill past its size budget", async () => {
+  const { MEMORY_MAX_CHARS, SKILL_MAX_CHARS } = await import("../scripts/lib/guard.mjs");
+  const { d, claudeSkills } = setup();
+  const memory = path.join(d.memory, "fact.md");
+  const skill = path.join(d.skills, "deploy", "SKILL.md");
+  const head = "---\nname: x\ndescription: d\n---\n";
+
+  const bigMemory = classify("Write", { file_path: memory, content: head + "a".repeat(MEMORY_MAX_CHARS) }, d, claudeSkills, "peka:reviewer");
+  assert.equal(bigMemory.decision, "deny");
+  assert.equal(bigMemory.kind, "memory");
+  assert.match(bigMemory.reason, /2500 characters/);
+  assert.equal(classify("Write", { file_path: memory, content: head + "a".repeat(100) }, d, claudeSkills).decision, "allow");
+
+  const bigSkill = classify("Write", { file_path: skill, content: head + "a".repeat(SKILL_MAX_CHARS) }, d, claudeSkills, "peka:reviewer");
+  assert.equal(bigSkill.decision, "deny");
+  assert.match(bigSkill.reason, /6000 characters/);
+  assert.match(bigSkill.reason, /[Rr]ewrite/);
+});
+
+test("lets an oversized file shrink, but not grow", () => {
+  const { d, claudeSkills } = setup();
+  const memory = path.join(d.memory, "old.md");
+  const long = "---\nname: old\ndescription: d\n---\n" + "history line\n".repeat(400);
+  fs.writeFileSync(memory, long);
+  const shrink = classify("Edit", { file_path: memory, old_string: "history line\nhistory line\n", new_string: "" }, d, claudeSkills, "peka:curator");
+  assert.equal(shrink.decision, "allow");
+  const grow = classify("Edit", { file_path: memory, old_string: "history line\n", new_string: "history line\nmore\n" }, d, claudeSkills, "peka:reviewer");
+  assert.equal(grow.decision, "deny");
+});
+
+test("the index files PEKA generates are not size-checked", () => {
+  const { d, claudeSkills } = setup();
+  const r = classify("Write", { file_path: path.join(d.memory, "MEMORY.md"), content: "x".repeat(9000) }, d, claudeSkills);
+  assert.equal(r.decision, "allow");
+});

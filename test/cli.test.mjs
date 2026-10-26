@@ -232,6 +232,16 @@ test("status says which skills load everywhere and which only in their project",
   assert.match(r.stdout, /shop \(only in that project\):/);
 });
 
+test("status lists memories and skills over their size budget", () => {
+  const s = sandbox();
+  seedStore(s);
+  fs.mkdirSync(path.join(s.home, "skills", "fat"), { recursive: true });
+  fs.writeFileSync(path.join(s.home, "skills", "fat", "SKILL.md"), "---\nname: fat\ndescription: d\n---\n" + "x".repeat(7000));
+  const r = s.run("status");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /Over the size budget \(the curator rewrites these shorter\): 1\n  - skill fat: \d+ characters \(budget 6000\)/);
+});
+
 test("show prints a memory or skill in full and rejects paths", () => {
   const s = sandbox();
   seedStore(s);

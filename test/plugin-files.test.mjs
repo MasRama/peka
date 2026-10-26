@@ -70,9 +70,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.6");
+  assert.equal(pkg.version, "0.1.7");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.6/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.7/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);
@@ -83,7 +83,8 @@ test("no file mentions the project PEKA was inspired by", () => {
   const banned = new RegExp(["her", "mes"].join(""), "i");
   const walk = (dir) =>
     fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-      if ([".git", "node_modules", ".superpowers"].includes(e.name)) return [];
+      // PEKA links project skills into .claude/skills; those links point outside the repo.
+      if ([".git", "node_modules", ".superpowers"].includes(e.name) || e.isSymbolicLink()) return [];
       const p = path.join(dir, e.name);
       return e.isDirectory() ? walk(p) : [p];
     });
@@ -120,4 +121,17 @@ test("agent prompts leave the index to PEKA and tag projects", () => {
     assert.match(body, /Do not edit `MEMORY\.md`/, name);
   }
   assert.match(fs.readFileSync(path.join(root, "agents", "curator.md"), "utf8"), /another machine/);
+});
+
+test("agent prompts keep the store small: size budgets, rewrite instead of append", () => {
+  for (const name of agents) {
+    const body = fs.readFileSync(path.join(root, "agents", `${name}.md`), "utf8");
+    assert.match(body, /2,500 characters/, name);
+    assert.match(body, /6,000 characters/, name);
+    assert.match(body, /[Rr]ewrite/, name);
+  }
+  const reviewer = fs.readFileSync(path.join(root, "agents", "reviewer.md"), "utf8");
+  assert.match(reviewer, /Most checkpoints save nothing/);
+  assert.match(reviewer, /make a mistake without it/);
+  assert.match(reviewer, /uncommitted/);
 });
