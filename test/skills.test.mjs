@@ -88,6 +88,7 @@ test("applyLifecycle seeds, stales at 14 days, archives at 30 days", () => {
   applyLifecycle(d, usage, t0, cfg);
   assert.equal(usage.skills.s.created, t0.toISOString());
   assert.equal(usage.skills.s.state, "active");
+  recordUse(usage, "s", t0.toISOString());
 
   assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 13 * DAY), cfg).stale, []);
   assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 14 * DAY), cfg).stale, ["s"]);
@@ -99,6 +100,26 @@ test("applyLifecycle seeds, stales at 14 days, archives at 30 days", () => {
   assert.ok(fs.existsSync(path.join(d.archive, "s", "SKILL.md")));
   assert.deepEqual(listSkills(d), []);
   assert.deepEqual(syncLinks(d, claudeSkills).removed, ["s"]);
+});
+
+test("a skill that was never used goes stale after 7 days and is archived after 10", () => {
+  const { d } = setup();
+  addSkill(d, "unused");
+  const t0 = new Date("2026-01-01T00:00:00Z");
+  const usage = { skills: { unused: { created: t0.toISOString(), uses: 0, state: "active" } } };
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 6 * DAY), cfg).stale, []);
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 7 * DAY), cfg).stale, ["unused"]);
+  assert.deepEqual(applyLifecycle(d, usage, new Date(t0.getTime() + 10 * DAY), cfg).archived, ["unused"]);
+});
+
+test("a project skill that was never used is archived after 10 active days of its project", () => {
+  const { d } = setup();
+  addProjectSkill(d, "fix", "wajom-portal");
+  const t0 = new Date("2026-01-01T12:00:00Z");
+  const usage = { skills: { fix: { created: t0.toISOString(), uses: 0, state: "active" } } };
+  const late = new Date(t0.getTime() + 90 * DAY);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 9) } }).archived, []);
+  assert.deepEqual(applyLifecycle(d, usage, late, cfg, { "wajom-portal": { activeDays: activeDays(t0, 10) } }).archived, ["fix"]);
 });
 
 test("applyLifecycle reactivates a stale skill that was used", () => {

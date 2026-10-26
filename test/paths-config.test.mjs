@@ -45,6 +45,8 @@ test("loadConfig defaults", () => {
     curatorIntervalDays: 7,
     staleAfterDays: 14,
     archiveAfterDays: 30,
+    unusedStaleAfterDays: 7,
+    unusedArchiveAfterDays: 10,
     learningNotice: "weekly",
   });
 });

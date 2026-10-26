@@ -38,6 +38,9 @@ export function loadConfig(env = process.env) {
     curatorIntervalDays: 7,
     staleAfterDays: 14,
     archiveAfterDays: 30,
+    // A skill nobody has used yet was probably not worth saving; retire it sooner.
+    unusedStaleAfterDays: 7,
+    unusedArchiveAfterDays: 10,
     learningNotice: notice(option(env, "LEARNING_NOTICE")),
   };
 }

@@ -180,10 +180,13 @@ export function applyLifecycle(d, usage, now, cfg, projects = loadProjects(d)) {
     }
     if (entry.pinned) continue;
     const ageDays = skillAge(d, name, entry, now, projects);
-    if (ageDays >= cfg.archiveAfterDays) {
+    const used = (entry.uses ?? 0) > 0;
+    const archiveAfter = used ? cfg.archiveAfterDays : cfg.unusedArchiveAfterDays;
+    const staleAfter = used ? cfg.staleAfterDays : cfg.unusedStaleAfterDays;
+    if (ageDays >= archiveAfter) {
       archiveSkill(d, name, now, usage);
       result.archived.push(name);
-    } else if (ageDays >= cfg.staleAfterDays) {
+    } else if (ageDays >= staleAfter) {
       if (entry.state !== "stale") {
         entry.state = "stale";
         result.stale.push(name);
