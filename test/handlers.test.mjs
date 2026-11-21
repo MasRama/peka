@@ -227,6 +227,31 @@ test("curator seeds first, fires after 7 days, waits 24 h before asking again", 
   assert.ok(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 8 * DAY))));
 });
 
+test("curator fires early, at most once a day, while the store is over budget", () => {
+  const ctx = make();
+  assert.equal(handle("Stop", stopInput(), ctx), null, "seeds first");
+  for (let i = 0; i < 20; i++) {
+    fs.mkdirSync(path.join(ctx.d.skills, `s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(ctx.d.skills, `s${i}`, "SKILL.md"), `---\nname: s${i}\ndescription: ${"x".repeat(500)}\n---\n`);
+  }
+  const out = handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 3600000)));
+  assert.match(out.hookSpecificOutput.additionalContext, /peka:curator/);
+  assert.match(out.hookSpecificOutput.additionalContext, /over budget/);
+  handle("SubagentStop", { session_id: "s1", agent_id: "c", agent_type: "peka:curator" }, at(ctx, new Date(T0.getTime() + 2 * 3600000)));
+  assert.equal(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 20 * 3600000))), null, "waits a day");
+  assert.ok(handle("Stop", stopInput(), at(ctx, new Date(T0.getTime() + 26 * 3600000))), "still over budget the next day");
+});
+
+test("SubagentStop for the curator says when the store is still over budget", () => {
+  const ctx = make();
+  for (let i = 0; i < 20; i++) {
+    fs.mkdirSync(path.join(ctx.d.skills, `s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(ctx.d.skills, `s${i}`, "SKILL.md"), `---\nname: s${i}\ndescription: ${"x".repeat(500)}\n---\n`);
+  }
+  const out = handle("SubagentStop", { session_id: "s1", agent_id: "c", agent_type: "peka:curator" }, ctx);
+  assert.match(out.systemMessage, /still over budget: Global skill listing: \d+ characters/);
+});
+
 test("SubagentStop for the curator applies safe actions and records the run", () => {
   const ctx = make();
   addSkill(ctx, "dup");

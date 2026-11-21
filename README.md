@@ -111,6 +111,12 @@ Everything PEKA saves is loaded into later sessions, so it saves little and keep
   already too long may only shrink, and `/peka:status` and the curator report list them.
 - **Unused skills go first.** A skill nobody has used is archived after 10 days (10 active
   days of its project for a project skill). Archived items stay in `archive/` and git.
+- **Context budgets.** The global skill listing (about 8,000 characters) and `MEMORY.md`
+  (about 10,000 characters) load into every session. When either passes its budget, the
+  curator report lists it under `Must fix`, the curator runs without waiting for its
+  weekly turn, and it has to bring each back under budget by tagging project-only items,
+  archiving unused skills, merging overlaps, and shortening descriptions. While the store
+  stays over budget, PEKA asks for a curator run at most once a day.
 
 ### Projects and the index
 
@@ -198,7 +204,7 @@ Claude Code session, under the same terms as everything else you do there.
 The reviewer and curator are ordinary Claude Code subagents running in your session, so
 they count toward your usage the same way any subagent does. With the defaults, a
 reviewer (Sonnet) runs at most once every 10 turns and the curator (Opus) about once a
-week. To spend less, raise the intervals, pick `haiku` for the reviewer, or set an
+week, or once a day while the store is over its context budget. To spend less, raise the intervals, pick `haiku` for the reviewer, or set an
 interval to `0` to turn that kind of review off.
 
 ## Configuration

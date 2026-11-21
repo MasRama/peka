@@ -15,6 +15,7 @@ import {
   globalSkills,
   projectSkills,
   syncProjectLinks,
+  budgetProblems,
 } from "../scripts/lib/skills.mjs";
 import { execFileSync } from "node:child_process";
 import { repoOf } from "../scripts/lib/project.mjs";
@@ -400,4 +401,29 @@ test("writeCuratorReport flags a global skill listing over budget", () => {
   }
   const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
   assert.match(text, /over budget/i);
+});
+
+test("writeCuratorReport puts budget overruns first as a must-fix target with listing sizes", () => {
+  const { d } = setup();
+  for (let i = 0; i < 20; i++) {
+    fs.mkdirSync(path.join(d.skills, `s${i}`), { recursive: true });
+    fs.writeFileSync(path.join(d.skills, `s${i}`, "SKILL.md"), `---\nname: s${i}\ndescription: ${"x".repeat(500)}\n---\n`);
+  }
+  addProjectSkill(d, "trace", "shop");
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /## Must fix: over budget\n\n- Global skill listing: \d+ characters, \d+ over its 8000 budget/);
+  assert.ok(text.indexOf("## Must fix") < text.indexOf("| Skill |"), "the must-fix section comes before the table");
+  assert.match(text, /\| Skill \| Uses \| Last used \| State \| Pinned \| Project \| Age \(days\) \| Listing chars \|/);
+  assert.match(text, /\| s0 \| 0 \| never \| active \| no \| — \| 0 \| 502 \|/);
+  assert.match(text, /\| trace \| .* \| shop \| \d+ \| — \|/);
+});
+
+test("budgetProblems flags a MEMORY.md over its budget", () => {
+  const { d } = setup();
+  assert.deepEqual(budgetProblems(d), []);
+  fs.writeFileSync(path.join(d.memory, "MEMORY.md"), "x".repeat(10500));
+  assert.deepEqual(budgetProblems(d), ["MEMORY.md: 10500 characters, 500 over its 10000 budget"]);
+  const text = fs.readFileSync(writeCuratorReport(d, { skills: {} }, new Date("2026-01-10T00:00:00Z")), "utf8");
+  assert.match(text, /MEMORY\.md size: 10500 characters \(budget about 10000\)/);
+  assert.match(text, /## Must fix: over budget\n\n- MEMORY\.md: 10500 characters, 500 over its 10000 budget/);
 });

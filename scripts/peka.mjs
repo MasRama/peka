@@ -19,6 +19,7 @@ import {
 import { applySettings, SettingsParseError } from "./lib/settings.mjs";
 import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import {
+  budgetProblems,
   globalSkills,
   listingSummary,
   oversizedItems,
@@ -453,7 +454,8 @@ function curate() {
   const c = loadCurator(d);
   c.lastPromptAt = now.toISOString();
   saveCurator(d, c);
-  out(curatorInstruction({ report, d, model: cfg.curatorModel }));
+  const lead = budgetProblems(d).length ? "PEKA maintenance: the store is over budget." : "PEKA maintenance is due.";
+  out(curatorInstruction({ report, d, model: cfg.curatorModel, lead }));
 }
 
 function history(raw) {

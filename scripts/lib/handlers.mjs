@@ -22,6 +22,7 @@ import { classify, isInside, resolveReal } from "./guard.mjs";
 import {
   applyLifecycle,
   archiveSkill,
+  budgetProblems,
   globalSkills,
   listSkills,
   recordUse,
@@ -258,14 +259,18 @@ function curatorPrompt(ctx) {
     saveCurator(ctx.d, c);
     return null;
   }
-  if (since(ctx.now, c.lastRunAt ?? c.seededAt) < ctx.cfg.curatorIntervalDays * DAY) return null;
   if (since(ctx.now, c.lastPromptAt) < 24 * HOUR) return null;
-
   const { overflow } = buildIndex(ctx.d);
+  const due = since(ctx.now, c.lastRunAt ?? c.seededAt) >= ctx.cfg.curatorIntervalDays * DAY;
+  // Over budget, the store costs context in every session; do not wait for the weekly run.
+  const overBudget = budgetProblems(ctx.d).length > 0;
+  if (!due && !overBudget) return null;
+
   const report = writeCuratorReport(ctx.d, loadUsage(ctx.d), ctx.now, { overflow, home: ctx.userHome });
   c.lastPromptAt = ctx.now.toISOString();
   saveCurator(ctx.d, c);
-  return context("Stop", curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel }));
+  const lead = overBudget ? "PEKA maintenance is due: the store is over budget." : undefined;
+  return context("Stop", curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel, lead }));
 }
 
 function stop(input, ctx) {
@@ -348,7 +353,11 @@ function subagentStop(input, ctx) {
   buildIndex(ctx.d);
   const before = headCommit(ctx.d.home);
   commit(ctx, `peka: ${role} update`);
-  return eachNotice(ctx, before);
+  const notice = eachNotice(ctx, before);
+  const left = role === "curator" ? budgetProblems(ctx.d) : [];
+  if (!left.length) return notice;
+  const warning = `PEKA: still over budget: ${left.join("; ")}. The curator runs again tomorrow.`;
+  return { systemMessage: notice ? `${notice.systemMessage}\n${warning}` : warning };
 }
 
 // learning_notice "each": name what the commit just made changed.

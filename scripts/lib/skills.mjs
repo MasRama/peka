@@ -314,16 +314,41 @@ export function oversizedItems(d, { skills, memories } = storeItems(d)) {
 // listing passes about 1% of the context window: 8,000 characters on a 200k-token model.
 export const LISTING_BUDGET = 8000;
 
+// MEMORY.md is loaded into every session in full. Claude Code would take up to 25 KB, but every
+// line costs context, so PEKA keeps it to about 2,500 tokens.
+export const MEMORY_INDEX_BUDGET = 10000;
+
+function listingChars(d, name) {
+  let fm = {};
+  try {
+    fm = readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8"));
+  } catch {
+    // Unreadable: counts as its name only.
+  }
+  return name.length + String(fm.description ?? "").length + String(fm.when_to_use ?? "").length;
+}
+
 export function globalListingChars(d) {
-  return globalSkills(d).reduce((n, name) => {
-    let fm = {};
-    try {
-      fm = readFrontmatter(fs.readFileSync(path.join(d.skills, name, "SKILL.md"), "utf8"));
-    } catch {
-      // Unreadable: counts as its name only.
-    }
-    return n + name.length + String(fm.description ?? "").length + String(fm.when_to_use ?? "").length;
-  }, 0);
+  return globalSkills(d).reduce((n, name) => n + listingChars(d, name), 0);
+}
+
+export function memoryIndexChars(d) {
+  try {
+    return fs.readFileSync(path.join(d.memory, "MEMORY.md"), "utf8").length;
+  } catch {
+    return 0;
+  }
+}
+
+// What loads into every session and has grown past its budget. The curator must bring each
+// back under; until it does, PEKA asks for a curator run once a day.
+export function budgetProblems(d) {
+  const over = (what, chars, budget) =>
+    chars > budget ? [`${what}: ${chars} characters, ${chars - budget} over its ${budget} budget`] : [];
+  return [
+    ...over("Global skill listing", globalListingChars(d), LISTING_BUDGET),
+    ...over("MEMORY.md", memoryIndexChars(d), MEMORY_INDEX_BUDGET),
+  ];
 }
 
 export function listingSummary(d) {
@@ -333,6 +358,7 @@ export function listingSummary(d) {
   return [
     `Global skill listing: ${count} skills, ${chars} characters of names and descriptions (budget about ${LISTING_BUDGET}).`,
     ...(over ? [`Global skill listing is over budget: tag project-only skills, merge overlapping ones, or archive unused ones.`] : []),
+    `MEMORY.md size: ${memoryIndexChars(d)} characters (budget about ${MEMORY_INDEX_BUDGET}).`,
   ];
 }
 
@@ -345,7 +371,8 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     const u = usage.skills[name] ?? {};
     const last = (u.lastUsed ?? "").slice(0, 10) || "never";
     const age = u.created || u.lastUsed ? Math.floor(skillAge(d, name, u, now, projects)) : 0;
-    return `| ${name} | ${u.uses ?? 0} | ${last} | ${u.state ?? "active"} | ${u.pinned ? "yes" : "no"} | ${tags.join(", ") || "—"} | ${age} |`;
+    const listed = tags.length ? "—" : listingChars(d, name);
+    return `| ${name} | ${u.uses ?? 0} | ${last} | ${u.state ?? "active"} | ${u.pinned ? "yes" : "no"} | ${tags.join(", ") || "—"} | ${age} | ${listed} |`;
   });
 
   const { tagged } = knownProjects(d, items);
@@ -365,12 +392,14 @@ export function writeCuratorReport(d, usage, now, { overflow = 0, home = expandH
     `MEMORY.md lines: ${stats.indexLines}`,
     ...listingSummary(d),
     ...(overflow ? [`MEMORY.md overflow: ${overflow} global memories did not fit; merge or tag some.`] : []),
+    ...section("Must fix: over budget", budgetProblems(d)),
     "",
     "Age is calendar days since last use for global skills, and days the project was worked on for project skills.",
+    "Listing chars is what a global skill adds to the listing in every session (name, description, when_to_use).",
     "",
-    "| Skill | Uses | Last used | State | Pinned | Project | Age (days) |",
-    "|---|---|---|---|---|---|---|",
-    ...(rows.length ? rows : ["| (none) | | | | | | |"]),
+    "| Skill | Uses | Last used | State | Pinned | Project | Age (days) | Listing chars |",
+    "|---|---|---|---|---|---|---|---|",
+    ...(rows.length ? rows : ["| (none) | | | | | | | |"]),
     ...section(
       "Project tags with no recorded activity",
       [...tagged].filter((p) => !projects[p]).sort(),

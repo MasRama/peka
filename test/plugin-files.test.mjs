@@ -134,4 +134,7 @@ test("agent prompts keep the store small: size budgets, rewrite instead of appen
   assert.match(reviewer, /Most checkpoints save nothing/);
   assert.match(reviewer, /make a mistake without it/);
   assert.match(reviewer, /uncommitted/);
+  const curator = fs.readFileSync(path.join(root, "agents", "curator.md"), "utf8");
+  assert.match(curator, /Must fix/);
+  assert.match(curator, /under (the )?budget/);
 });
