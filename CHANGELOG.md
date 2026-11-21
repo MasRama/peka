@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.8
+
+- Context budgets are enforced. `MEMORY.md` gets a budget of about 10,000 characters
+  next to the global skill listing's 8,000; both load into every session.
+- When either is over budget, the curator report opens with a `Must fix: over budget`
+  section, and the curator has to bring each back under by tagging project-only items,
+  archiving unused skills, merging overlaps, and shortening descriptions.
+- An over-budget store gets a curator run at most once a day instead of waiting for the
+  weekly one, and the session is told when a run leaves it still over budget.
+- The curator report shows how many listing characters each global skill costs, and
+  `/peka:status` shows the size of `MEMORY.md`.
+
 ## 0.1.7
 
 - Saving nothing is the reviewer's default. It keeps only what a future session would

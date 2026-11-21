@@ -19,6 +19,7 @@ import {
 import { applySettings, SettingsParseError } from "./lib/settings.mjs";
 import { autoCommit, ensureRepo } from "./lib/git.mjs";
 import {
+  budgetProblems,
   globalSkills,
   listingSummary,
   oversizedItems,
@@ -101,7 +102,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.7", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.8", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"), globalSkills(d));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -453,7 +454,8 @@ function curate() {
   const c = loadCurator(d);
   c.lastPromptAt = now.toISOString();
   saveCurator(d, c);
-  out(curatorInstruction({ report, d, model: cfg.curatorModel }));
+  const lead = budgetProblems(d).length ? "PEKA maintenance: the store is over budget." : "PEKA maintenance is due.";
+  out(curatorInstruction({ report, d, model: cfg.curatorModel, lead }));
 }
 
 function history(raw) {

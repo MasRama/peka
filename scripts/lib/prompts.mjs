@@ -28,8 +28,8 @@ export function reviewerInstruction({ digest, focus, d, model, project = null })
   ]);
 }
 
-export function curatorInstruction({ report, d, model }) {
-  return launch("peka:curator", model, "PEKA maintenance is due.", [
+export function curatorInstruction({ report, d, model, lead = "PEKA maintenance is due." }) {
+  return launch("peka:curator", model, lead, [
     `Report: ${report}`,
     `Project: none`,
     `Actions file: ${path.join(d.state, "curator-actions.json")}`,

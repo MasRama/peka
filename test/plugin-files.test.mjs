@@ -70,9 +70,9 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.7");
+  assert.equal(pkg.version, "0.1.8");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.7/);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.8/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);
@@ -134,4 +134,7 @@ test("agent prompts keep the store small: size budgets, rewrite instead of appen
   assert.match(reviewer, /Most checkpoints save nothing/);
   assert.match(reviewer, /make a mistake without it/);
   assert.match(reviewer, /uncommitted/);
+  const curator = fs.readFileSync(path.join(root, "agents", "curator.md"), "utf8");
+  assert.match(curator, /Must fix/);
+  assert.match(curator, /under (the )?budget/);
 });
