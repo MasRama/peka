@@ -114,7 +114,7 @@ function setup(args) {
     if (args.includes("--apply")) {
       ensureDirs(d);
       ensureRepo(d.home);
-      writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.8", at: now.toISOString(), memoryDir, runtime: "devin" });
+      writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.2.0", at: now.toISOString(), memoryDir, runtime: "devin" });
       if (!fs.existsSync(configFile)) {
         writeJsonAtomic(configFile, {
           memory_interval: 10,
@@ -148,7 +148,7 @@ function setup(args) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.8", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.2.0", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"), globalSkills(d));
     out(
       `PEKA is set up. Home: ${d.home}`,
