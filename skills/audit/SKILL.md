@@ -13,6 +13,8 @@ allowed-tools:
 
 Arguments: `$ARGUMENTS`
 
+If `${CLAUDE_PLUGIN_ROOT}` is not expanded in your environment (e.g. Devin CLI), replace `${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs` with `<Base directory>/../../scripts/peka.mjs` (or the PEKA CLI path from the session briefing), and omit `--session "${CLAUDE_SESSION_ID}"` if `${CLAUDE_SESSION_ID}` is not expanded.
+
 ## `adopt <skill>`
 
 Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" adopt <skill>` and report the result.

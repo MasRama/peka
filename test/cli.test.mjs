@@ -13,8 +13,16 @@ const fixture = path.join(root, "test", "fixtures", "transcript.jsonl");
 
 function sandbox() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "peka-cli-"));
-  const env = { ...process.env, PEKA_HOME: path.join(tmp, "peka"), CLAUDE_CONFIG_DIR: path.join(tmp, "claude") };
-  delete env.CLAUDE_PLUGIN_OPTION_REVIEWER_MODEL;
+  const env = {
+    ...process.env,
+    PEKA_HOME: path.join(tmp, "peka"),
+    CLAUDE_CONFIG_DIR: path.join(tmp, "claude"),
+    DEVIN_CONFIG_DIR: path.join(tmp, "devin"),
+    DEVIN_SESSIONS_DIR: path.join(tmp, "devin-sessions"),
+  };
+  for (const key of ["CLAUDE_PLUGIN_OPTION_REVIEWER_MODEL", "DEVIN_PLUGIN_ROOT", "DEVIN_PROJECT_DIR", "AI_AGENT"]) {
+    delete env[key];
+  }
   fs.mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true });
   const run = (...args) => spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
   return { tmp, env, run, home: env.PEKA_HOME, claude: env.CLAUDE_CONFIG_DIR };

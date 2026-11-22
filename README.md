@@ -2,11 +2,11 @@
 
 > Your coding agent learns from experience.
 
-PEKA is a Claude Code plugin that gives Claude one memory shared by all your projects and
-lets it learn on its own. Every few turns a reviewer agent looks at what just happened
-and saves what is worth keeping: your preferences, corrections you made, project facts,
-and step-by-step procedures it can reuse later. Once a week another agent tidies
-everything up.
+PEKA is a plugin for **Claude Code** and **Devin CLI** that gives your coding agent one
+memory shared by all your projects (and shared across both tools) and lets it learn on its
+own. Every few turns a reviewer agent looks at what just happened and saves what is worth
+keeping: your preferences, corrections you made, project facts, and step-by-step
+procedures it can reuse later. Once a week another agent tidies everything up.
 
 A review pauses the session briefly and ends with one line saying what it saved; nothing
 asks for approval. Everything stays on your machine, in plain Markdown, with git history.
@@ -29,8 +29,10 @@ asks for approval. Everything stays on your machine, in plain Markdown, with git
 
 ## Install
 
-Requires Claude Code with plugin support, Node.js 18 or later, and git (optional, for
-history).
+Requires Claude Code or Devin CLI (local), Node.js 18 or later (Node 22+ recommended for
+Devin CLI's built-in SQLite reader), and git (optional, for history).
+
+### Claude Code
 
 ```
 /plugin marketplace add MasRama/peka
@@ -53,6 +55,31 @@ keys in `~/.claude/settings.json`, after writing a backup next to it:
 
 If you already have per-project memories, setup lists them and offers to merge them into
 the global memory. The originals are left in place.
+
+Start a new session afterwards.
+
+### Devin CLI
+
+```bash
+devin plugins install MasRama/peka
+# or from a local checkout:
+devin plugins install --local .
+```
+
+Then, in any Devin session:
+
+```
+/peka:setup
+```
+
+In Devin CLI, PEKA uses the same `~/.peka` store (shared with Claude Code if you use both):
+
+- **Global memory** is injected at `SessionStart` and re-injected after compaction (`PostCompact`).
+- **Global skills** link into `~/.config/devin/skills`, and **project skills** link into
+  `<repo>/.devin/skills` (ignored via `.git/info/exclude`).
+- **Reviews & `/peka:search`** read Devin's local `sessions.db` (and Claude transcripts if present).
+- **Options** live in `~/.peka/config.json` (with `PEKA_*` environment overrides).
+- **Subagent models** are set in `agents/*.md` or `agent.subagent_model` in `~/.config/devin/config.json`.
 
 Start a new session afterwards.
 

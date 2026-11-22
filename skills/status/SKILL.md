@@ -16,6 +16,8 @@ allowed-tools:
 
 Arguments: `$ARGUMENTS`
 
+If `${CLAUDE_PLUGIN_ROOT}` is not expanded in your environment (e.g. Devin CLI), replace `${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs` with `<Base directory>/../../scripts/peka.mjs` (or the PEKA CLI path from the session briefing).
+
 - If the arguments start with `show` followed by a name, run
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" show <name>` and present the file's
   content as it is.

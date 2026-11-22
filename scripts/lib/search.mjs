@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { entriesFor } from "./digest.mjs";
+import { searchDevinTranscripts } from "./devin-sessions.mjs";
 
 const RADIUS = 150;
 
@@ -33,7 +34,7 @@ function snippet(text, at) {
   return `${start > 0 ? "…" : ""}${body}${end < text.length ? "…" : ""}`;
 }
 
-export function searchTranscripts(claudeHomeDir, terms, { project, limit = 10 } = {}) {
+export function searchTranscripts(claudeHomeDir, terms, { project, limit = 10, devinDbPath } = {}) {
   const needles = terms.map((t) => String(t).toLowerCase()).filter(Boolean);
   if (!needles.length || limit < 1) return [];
   const hits = [];
@@ -62,8 +63,12 @@ export function searchTranscripts(claudeHomeDir, terms, { project, limit = 10 } 
     for (const hit of found.reverse()) {
       delete hit.mtime;
       hits.push(hit);
-      if (hits.length >= limit) return hits;
+      if (hits.length >= limit) break;
     }
+    if (hits.length >= limit) break;
   }
-  return hits;
+  if (!devinDbPath) return hits;
+  const devinHits = searchDevinTranscripts(devinDbPath, terms, { project, limit });
+  if (!devinHits.length) return hits;
+  return [...hits, ...devinHits].sort((a, b) => b.when.localeCompare(a.when)).slice(0, limit);
 }

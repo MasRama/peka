@@ -1,0 +1,11 @@
+{
+  "name": "peka",
+  "version": "0.2.0",
+  "description": "Your coding agent learns from experience. Global memory and background learning for Claude Code and Devin CLI.",
+  "author": {
+    "name": "MasRama"
+  },
+  "license": "MIT",
+  "keywords": ["memory", "learning", "skills", "self-improving", "hooks"],
+  "platforms": ["local"]
+}

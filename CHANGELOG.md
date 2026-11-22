@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0
+
+- Full dual-runtime support for Devin CLI alongside Claude Code, sharing one `~/.peka`
+  store across both tools.
+- Added `.devin-plugin/plugin.json` (`platforms: ["local"]`) while keeping one shared
+  `hooks/hooks.json` with lowercase tool matchers, `PermissionRequest`, and `PostCompact`.
+- Global memory (`MEMORY.md`) and current-project memories are injected on `SessionStart`
+  and re-injected after compaction (`PostCompact`) in Devin CLI.
+- Automatic checkpoints (`Stop`), foreground `peka:reviewer` / `peka:curator` /
+  `peka:learner` runs via `run_subagent`, safe auto-approval via `PermissionRequest`, and
+  post-run archiving, link syncing, index rebuilds, and auto-commits via `PostToolUse`.
+- Global skills link into `~/.config/devin/skills` and project skills into
+  `<repo>/.devin/skills` (excluded via `.git/info/exclude`).
+- Zero-dependency SQLite reader (`node:sqlite` with `sqlite3` CLI fallback) for Devin CLI
+  `sessions.db` digests and unified `/peka:search` across both Claude Code and Devin CLI
+  sessions.
+- Persistent `~/.peka/config.json` and `PEKA_*` environment overrides for runtimes without
+  a plugin config UI, plus automatic session ID resolution when `${CLAUDE_SESSION_ID}` is
+  not expanded.
+
 ## 0.1.8
 
 - Context budgets are enforced. `MEMORY.md` gets a budget of about 10,000 characters

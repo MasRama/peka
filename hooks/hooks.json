@@ -36,11 +36,23 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|Read|Glob|Grep",
+        "matcher": "Write|Edit|Read|Glob|Grep|write|edit|apply_patch|read|glob|grep|run_subagent",
         "hooks": [
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" PreToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Write|Edit|Read|Glob|Grep|write|edit|apply_patch|read|glob|grep|exec",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" PermissionRequest",
             "timeout": 10
           }
         ]
@@ -53,6 +65,17 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\" PostCompact",
             "timeout": 10
           }
         ]

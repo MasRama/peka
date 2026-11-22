@@ -2,10 +2,11 @@
 // PEKA command line. Plugin skills call this; it prints plain text for Claude to relay.
 import fs from "node:fs";
 import path from "node:path";
-import { claudeHome, dirs, ensureDirs, pekaHome } from "./lib/paths.mjs";
-import { loadConfig } from "./lib/config.mjs";
+import { claudeHome, devinHome, devinSessionsDb, dirs, ensureDirs, isDevinRuntime, pekaHome } from "./lib/paths.mjs";
+import { loadConfig, loadFileConfig } from "./lib/config.mjs";
 import {
   isSetUp,
+  lastSessionFor,
   loadCurator,
   loadProjects,
   loadSession,
@@ -31,6 +32,7 @@ import {
   writeCuratorReport,
 } from "./lib/skills.mjs";
 import { buildDigest, writeDigest } from "./lib/digest.mjs";
+import { buildDevinDigest, findLatestDevinSession, hasDevinSession } from "./lib/devin-sessions.mjs";
 import { searchTranscripts } from "./lib/search.mjs";
 import { curatorInstruction, learnerInstruction, reviewerInstruction } from "./lib/prompts.mjs";
 import { projectsOf, readFrontmatter } from "./lib/frontmatter.mjs";
@@ -43,9 +45,15 @@ const env = process.env;
 const now = new Date();
 const d = dirs(pekaHome(env));
 const claude = claudeHome(env);
+const devin = devinHome(env);
+const devinDb = devinSessionsDb(env);
+const runtime = isDevinRuntime(env) ? "devin" : "claude";
 const settingsFile = path.join(claude, "settings.json");
-// Hooks save the effective plugin options at session start; Bash commands never see them.
-const cfg = { ...loadConfig(env), ...readJson(path.join(d.state, "config.json"), {}) };
+const cfg = { ...loadConfig(env, loadFileConfig(d)), ...readJson(path.join(d.state, "config.json"), {}) };
+
+function skillsDir(rt = runtime) {
+  return path.join(rt === "devin" ? devin : claude, "skills");
+}
 
 class UsageError extends Error {}
 
@@ -97,12 +105,50 @@ function legacyMemories() {
 }
 
 function setup(args) {
+  const rt = option(args, "--runtime") ?? runtime;
+  if (rt !== "devin" && rt !== "claude") throw new UsageError("--runtime must be devin or claude");
   const memoryDir = memoryDirSetting();
+  if (rt === "devin") {
+    const linkDir = skillsDir("devin");
+    const configFile = path.join(d.home, "config.json");
+    if (args.includes("--apply")) {
+      ensureDirs(d);
+      ensureRepo(d.home);
+      writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.2.0", at: now.toISOString(), memoryDir, runtime: "devin" });
+      if (!fs.existsSync(configFile)) {
+        writeJsonAtomic(configFile, {
+          memory_interval: 10,
+          skill_interval: 60,
+          reviewer_model: "sonnet",
+          curator_model: "opus",
+          auto_commit: true,
+          learning_notice: "weekly",
+        });
+      }
+      syncLinks(d, linkDir, globalSkills(d));
+      out(
+        `PEKA is set up. Home: ${d.home}`,
+        `Runtime: devin`,
+        `Skills link dir: ${linkDir}`,
+        `Config file: ${configFile}`,
+        "Start a new session so the global memory and skills take effect.",
+      );
+      return;
+    }
+    out(
+      isSetUp(d) ? `PEKA is already set up. Home: ${d.home}` : `PEKA is not set up yet. Home will be: ${d.home}`,
+      `Runtime: devin`,
+      `Skills link dir: ${linkDir}`,
+      `Config file: ${configFile}`,
+      "Devin loads global memory automatically via PEKA's SessionStart / PostCompaction hooks (no settings.json edits needed).",
+    );
+    return;
+  }
   if (args.includes("--apply")) {
     const r = applySettings(settingsFile, { memoryDir });
     ensureDirs(d);
     ensureRepo(d.home);
-    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.1.8", at: now.toISOString(), memoryDir });
+    writeJsonAtomic(path.join(d.state, "setup.json"), { version: "0.2.0", at: now.toISOString(), memoryDir });
     syncLinks(d, path.join(claude, "skills"), globalSkills(d));
     out(
       `PEKA is set up. Home: ${d.home}`,
@@ -154,16 +200,16 @@ function memoryFiles() {
 }
 
 function unmanagedSkills() {
-  const claudeSkills = path.join(claude, "skills");
+  const targetSkills = skillsDir();
   let entries = [];
   try {
-    entries = fs.readdirSync(claudeSkills, { withFileTypes: true });
+    entries = fs.readdirSync(targetSkills, { withFileTypes: true });
   } catch {
     return [];
   }
   return entries
-    .filter((e) => e.isDirectory() && fs.existsSync(path.join(claudeSkills, e.name, "SKILL.md")))
-    .map((e) => ({ name: e.name, ...frontmatterOf(path.join(claudeSkills, e.name, "SKILL.md")) }))
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(targetSkills, e.name, "SKILL.md")))
+    .map((e) => ({ name: e.name, ...frontmatterOf(path.join(targetSkills, e.name, "SKILL.md")) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -215,11 +261,11 @@ function status() {
   const curator = loadCurator(d);
   const memories = memoryFiles();
   const skills = listSkills(d);
-  const claudeSkills = path.join(claude, "skills");
+  const targetSkills = skillsDir();
   const conflicts = skills.filter((name) => {
-    const link = path.join(claudeSkills, name);
+    const link = path.join(targetSkills, name);
     const st = fs.lstatSync(link, { throwIfNoEntry: false });
-    return st && !(st.isSymbolicLink() && path.resolve(claudeSkills, fs.readlinkSync(link)) === path.join(d.skills, name));
+    return st && !(st.isSymbolicLink() && path.resolve(targetSkills, fs.readlinkSync(link)) === path.join(d.skills, name));
   });
   out(
     `PEKA home: ${d.home}`,
@@ -283,8 +329,9 @@ function audit() {
       })
       .map((k) => `${k.name} — ${k.fm.description || "(no description)"}`),
   );
+  const skillsLabel = runtime === "devin" ? "~/.config/devin/skills" : "~/.claude/skills";
   add(
-    "Skills outside PEKA, in ~/.claude/skills (adopt the ones PEKA should manage):",
+    `Skills outside PEKA, in ${skillsLabel} (adopt the ones PEKA should manage):`,
     unmanagedSkills().map((k) => `${k.name} — ${k.description || "(no description)"}`),
   );
 
@@ -308,10 +355,10 @@ function audit() {
 function adopt(name) {
   requireSetup();
   if (!plainName(name)) throw new Error(`Not a skill name: "${name}".`);
-  const claudeSkills = path.join(claude, "skills");
-  const src = path.join(claudeSkills, name);
+  const targetSkills = skillsDir();
+  const src = path.join(targetSkills, name);
   const st = fs.lstatSync(src, { throwIfNoEntry: false });
-  if (!st) throw new Error(`No skill named "${name}" in ${claudeSkills}.`);
+  if (!st) throw new Error(`No skill named "${name}" in ${targetSkills}.`);
   if (st.isSymbolicLink()) throw new Error(`${src} is a link, not a skill folder; nothing to adopt.`);
   if (!st.isDirectory() || !fs.existsSync(path.join(src, "SKILL.md"))) throw new Error(`${src} has no SKILL.md.`);
   const dest = path.join(d.skills, name);
@@ -339,7 +386,7 @@ function adopt(name) {
     if (fs.existsSync(src) && fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
     throw err;
   }
-  syncLinks(d, claudeSkills, [...new Set([...globalSkills(d), name])]);
+  syncLinks(d, targetSkills, [...new Set([...globalSkills(d), name])]);
   if (!fs.lstatSync(src, { throwIfNoEntry: false })?.isSymbolicLink()) {
     fs.rmSync(src, { force: true });
     fs.renameSync(backup, src);
@@ -365,11 +412,19 @@ function adopt(name) {
 
 const MODES = new Set(["decide", "skill", "memory"]);
 
+function resolveSessionId(rawId) {
+  if (rawId && rawId !== "${CLAUDE_SESSION_ID}") {
+    return plainName(rawId) ? rawId : null;
+  }
+  return lastSessionFor(d, process.cwd()) ?? findLatestDevinSession(devinDb, process.cwd())?.id ?? null;
+}
+
 function learn(args) {
   const mode = option(args, "--mode") ?? "decide";
-  const id = option(args, "--session");
+  const rawId = option(args, "--session");
   if (!MODES.has(mode)) throw new UsageError(`--mode must be one of: ${[...MODES].join(", ")}`);
-  if (!id) throw new UsageError("learn needs --session <id>");
+  const id = resolveSessionId(rawId);
+  if (rawId === undefined && !id && runtime === "claude") throw new UsageError("learn needs --session <id>");
   requireSetup();
   if (plainName(id)) {
     // The user is saving by hand, so the next automatic review of the same kind can wait.
@@ -377,14 +432,18 @@ function learn(args) {
     saveSession(d, id, mode === "skill" ? { ...s, toolsSinceSkill: 0 } : { ...s, turnsSinceMemory: 0 });
   }
   let digest = null;
-  const transcript = plainName(id) ? findTranscript(id) : null;
-  if (transcript) {
-    const built = buildDigest(transcript, 0, { maxChars: 30000 });
-    if (built.text) digest = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: built.text, now });
+  if (plainName(id)) {
+    const transcript = findTranscript(id);
+    const built = transcript
+      ? buildDigest(transcript, 0, { maxChars: 30000 })
+      : hasDevinSession(devinDb, id)
+        ? buildDevinDigest(devinDb, id, 0, { maxChars: 30000 })
+        : null;
+    if (built?.text) digest = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: built.text, now });
   }
   const saved = plainName(id) ? loadSession(d, id).project : undefined;
   const project = saved !== undefined ? saved : projectOf(process.cwd());
-  out(learnerInstruction({ digest, mode, d, model: cfg.reviewerModel, project }));
+  out(learnerInstruction({ digest, mode, d, model: cfg.reviewerModel, project, runtime }));
 }
 
 function show(name) {
@@ -411,7 +470,7 @@ function search(args) {
   const project = option(args, "--project");
   const limit = Number(option(args, "--limit") ?? 10);
   if (!args.length) throw new UsageError("search needs at least one term");
-  const hits = searchTranscripts(claude, args, { project, limit: Number.isFinite(limit) ? limit : 10 });
+  const hits = searchTranscripts(claude, args, { project, limit: Number.isFinite(limit) ? limit : 10, devinDbPath: devinDb });
   if (!hits.length) return out(`No matches for: ${args.join(" ")}`);
   for (const h of hits) out(`- ${h.when.slice(0, 10)} ${h.project} session ${h.session}`, `  ${h.snippet}`);
 }
@@ -433,18 +492,25 @@ function findTranscript(id) {
 
 function review(args) {
   requireSetup();
-  const id = option(args, "--session");
+  const id = resolveSessionId(option(args, "--session"));
   if (!plainName(id)) throw new UsageError("review needs --session <id>");
-  const transcript = findTranscript(id);
-  if (!transcript) throw new Error(`No transcript found for session ${id}.`);
   const s = loadSession(d, id);
-  let digest = buildDigest(transcript, s.lastDigestLine);
-  if (!digest.text) digest = buildDigest(transcript, 0);
+  const transcript = findTranscript(id);
+  let digest;
+  if (transcript) {
+    digest = buildDigest(transcript, s.lastDigestLine);
+    if (!digest.text) digest = buildDigest(transcript, 0);
+  } else if (hasDevinSession(devinDb, id)) {
+    digest = buildDevinDigest(devinDb, id, s.lastDigestLine);
+    if (!digest.text) digest = buildDevinDigest(devinDb, id, 0);
+  } else {
+    throw new Error(`No transcript found for session ${id}.`);
+  }
   if (!digest.text) throw new Error("This session has nothing to review yet.");
   const file = writeDigest(d, { sessionId: id, cwd: process.cwd(), text: digest.text, now });
   saveSession(d, id, { ...s, turnsSinceMemory: 0, toolsSinceSkill: 0, lastDigestLine: digest.toLine });
   const project = s.project !== undefined ? s.project : projectOf(process.cwd());
-  out(reviewerInstruction({ digest: file, focus: "memory and skills", d, model: cfg.reviewerModel, project }));
+  out(reviewerInstruction({ digest: file, focus: "memory and skills", d, model: cfg.reviewerModel, project, runtime }));
 }
 
 function curate() {
@@ -455,7 +521,7 @@ function curate() {
   c.lastPromptAt = now.toISOString();
   saveCurator(d, c);
   const lead = budgetProblems(d).length ? "PEKA maintenance: the store is over budget." : "PEKA maintenance is due.";
-  out(curatorInstruction({ report, d, model: cfg.curatorModel, lead }));
+  out(curatorInstruction({ report, d, model: cfg.curatorModel, lead, runtime }));
 }
 
 function history(raw) {
@@ -498,7 +564,7 @@ try {
   commands[command]();
 } catch (err) {
   if (err instanceof UsageError) {
-    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply | legacy | status | where | show <name> | audit | adopt <skill> | learn --session <id> --mode decide|skill|memory | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review --session <id> | curate | log [days]\n`);
+    process.stderr.write(`peka: ${err.message}\nUsage: peka setup --check|--apply [--runtime devin|claude] | legacy | status | where | show <name> | audit | adopt <skill> | learn [--session <id>] --mode decide|skill|memory | pin <skill> | unpin <skill> | search <terms…> [--project p] [--limit n] | review [--session <id>] | curate | log [days]\n`);
     process.exit(2);
   }
   process.stderr.write(`${err instanceof SettingsParseError ? "" : "peka: "}${err.message}\n`);

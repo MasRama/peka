@@ -1,6 +1,6 @@
 {
   "name": "peka",
-  "description": "PEKA: global memory and background learning for Claude Code.",
+  "description": "PEKA: global memory and background learning for Claude Code and Devin CLI.",
   "owner": {
     "name": "MasRama"
   },
@@ -8,7 +8,7 @@
     {
       "name": "peka",
       "source": "./",
-      "description": "Your coding agent learns from experience. Global memory and background learning for Claude Code."
+      "description": "Your coding agent learns from experience. Global memory and background learning for Claude Code and Devin CLI."
     }
   ]
 }

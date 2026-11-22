@@ -53,8 +53,10 @@ test("hooks.json registers every event through the entrypoint", () => {
     SessionStart: undefined,
     UserPromptSubmit: undefined,
     UserPromptExpansion: undefined,
-    PreToolUse: "Write|Edit|Read|Glob|Grep",
+    PreToolUse: "Write|Edit|Read|Glob|Grep|write|edit|apply_patch|read|glob|grep|run_subagent",
+    PermissionRequest: "Write|Edit|Read|Glob|Grep|write|edit|apply_patch|read|glob|grep|exec",
     PostToolUse: "*",
+    PostCompact: undefined,
     Stop: undefined,
     SubagentStop: "^peka:(reviewer|curator|learner)$",
   };
@@ -70,9 +72,14 @@ test("hooks.json registers every event through the entrypoint", () => {
 test("versions agree and docs exist", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const plugin = JSON.parse(fs.readFileSync(path.join(root, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(pkg.version, "0.1.8");
+  const devinPlugin = JSON.parse(fs.readFileSync(path.join(root, ".devin-plugin", "plugin.json"), "utf8"));
+  assert.equal(pkg.version, "0.2.0");
   assert.equal(plugin.version, pkg.version);
-  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.1\.8/);
+  assert.equal(devinPlugin.name, plugin.name);
+  assert.equal(devinPlugin.version, pkg.version);
+  assert.deepEqual(devinPlugin.platforms, ["local"]);
+  assert.equal(fs.existsSync(path.join(root, "hooks.json")), false, "root hooks.json would double-load in Devin");
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## 0\.2\.0/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   for (const section of ["Install", "How it works", "Privacy", "Cost", "Configuration", "Uninstall"]) {
     assert.match(readme, new RegExp(`^## ${section}`, "m"), section);

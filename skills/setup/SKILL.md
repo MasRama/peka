@@ -9,16 +9,20 @@ allowed-tools:
 
 # Set up PEKA
 
+If `${CLAUDE_PLUGIN_ROOT}` is not expanded in your environment (e.g. Devin CLI), replace `${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs` with `<Base directory>/../../scripts/peka.mjs` (or the PEKA CLI path from the session briefing).
+
 1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" setup --check` and read the output.
 2. Explain to the user, briefly and in their language:
    - PEKA keeps one global memory and a library of learned skills in `~/.peka`, shared by
      every project, with local git history as a safety net.
    - Every few turns a reviewer agent saves what is worth remembering (the session pauses
      briefly while it works and ends with one line on what it saved), and
-     about once a week a curator agent tidies it. Both run as normal Claude Code
-     subagents and count toward usage like any other subagent.
-   - The exact settings changes listed in the check output. A backup of `settings.json`
-     is written before anything changes.
+     about once a week a curator agent tidies it. Both run as normal subagents and count
+     toward usage like any other subagent.
+   - In Claude Code: the exact settings changes listed in the check output (a backup of
+     `settings.json` is written before anything changes). In Devin CLI: `setup --apply`
+     initializes `~/.peka` and links skills to `~/.config/devin/skills` (no `settings.json`
+     changes needed).
 3. Ask the user whether to apply. If they decline, stop here.
 4. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" setup --apply` and report the result.
    If it fails because `settings.json` is not valid JSON, show the error and ask the user
