@@ -103,3 +103,30 @@ export function loadNotice(d) {
 export function saveNotice(d, notice) {
   writeJsonAtomic(path.join(d.state, "notice.json"), notice);
 }
+
+const MAX_LAST_SESSIONS = 50;
+
+export function recordLastSession(d, cwd, sessionId) {
+  if (typeof cwd !== "string" || !cwd || typeof sessionId !== "string" || !sessionId) return;
+  try {
+    const file = path.join(d.state, "last-sessions.json");
+    const raw = readJson(file, {});
+    const map = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    map[path.resolve(cwd)] = { id: sessionId, at: Date.now() };
+    const trimmed = Object.fromEntries(
+      Object.entries(map)
+        .sort(([, a], [, b]) => (b?.at ?? 0) - (a?.at ?? 0))
+        .slice(0, MAX_LAST_SESSIONS),
+    );
+    writeJsonAtomic(file, trimmed);
+  } catch {
+    // Recording session metadata must never break a hook.
+  }
+}
+
+export function lastSessionFor(d, cwd) {
+  if (typeof cwd !== "string" || !cwd) return null;
+  const raw = readJson(path.join(d.state, "last-sessions.json"), {});
+  const map = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return map[path.resolve(cwd)]?.id ?? null;
+}
