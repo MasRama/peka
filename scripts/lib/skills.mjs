@@ -87,20 +87,22 @@ const EXCLUDE_START = "# PEKA: project skill links (managed by PEKA)";
 const EXCLUDE_END = "# PEKA: end";
 
 // Lists the PEKA links in the checkout's exclude file so they never show up in git status.
-function writeExclude(file, names) {
+function writeExclude(file, names, dirName = ".claude") {
   let text = "";
   try {
     text = fs.readFileSync(file, "utf8");
   } catch {
     // No exclude file yet.
   }
+  const startMarker = dirName === ".claude" ? EXCLUDE_START : `# PEKA: project skill links (${dirName})`;
+  const endMarker = dirName === ".claude" ? EXCLUDE_END : `# PEKA: end (${dirName})`;
   const lines = text.split("\n");
-  const start = lines.indexOf(EXCLUDE_START);
-  const end = lines.indexOf(EXCLUDE_END, start);
+  const start = lines.indexOf(startMarker);
+  const end = lines.indexOf(endMarker, start);
   if (start !== -1 && end !== -1) lines.splice(start, end - start + 1);
   let next = lines.join("\n").replace(/\n+$/, "");
   if (names.length) {
-    next += `${next ? "\n\n" : ""}${[EXCLUDE_START, ...names.map((n) => `/.claude/skills/${n}`), EXCLUDE_END].join("\n")}`;
+    next += `${next ? "\n\n" : ""}${[startMarker, ...names.map((n) => `/${dirName}/skills/${n}`), endMarker].join("\n")}`;
   }
   next = next ? `${next}\n` : "";
   if (next === text) return;
@@ -108,20 +110,20 @@ function writeExclude(file, names) {
   fs.writeFileSync(file, next);
 }
 
-// Project skills live in the project's own .claude/skills, so other projects never list them.
-export function syncProjectLinks(d, repo) {
+// Project skills live in the project's own .claude/skills (or .devin/skills), so other projects never list them.
+export function syncProjectLinks(d, repo, { dirName = ".claude" } = {}) {
   const empty = { created: [], removed: [], conflicts: [] };
   if (!repo?.project || !repo.root) return empty;
   const home = fs.existsSync(d.home) ? fs.realpathSync(d.home) : d.home;
   if (isInside(repo.root, d.home) || isInside(repo.root, home)) return empty;
-  const dir = path.join(repo.root, ".claude", "skills");
+  const dir = path.join(repo.root, dirName, "skills");
   const result = syncLinks(d, dir, projectSkills(d, repo.project));
   if (fs.existsSync(dir) && repo.exclude) {
     const linked = fs.readdirSync(dir).filter((name) => {
       const target = linkTarget(path.join(dir, name));
       return target && pointsIntoPeka(target, d);
     });
-    writeExclude(repo.exclude, linked.sort());
+    writeExclude(repo.exclude, linked.sort(), dirName);
   }
   return result;
 }

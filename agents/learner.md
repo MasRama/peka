@@ -67,7 +67,7 @@ short line, since it is the index line, and make it state the fact itself rather
 only when it is relevant.
 
 **Skill**: `<Skills dir>/<kebab-name>/SKILL.md`, always under `Skills dir`, never under
-`~/.claude/skills`.
+`~/.claude/skills` or `~/.config/devin/skills`.
 
 ```markdown
 ---

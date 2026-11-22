@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { projectEntries } from "./memory-index.mjs";
 
@@ -7,9 +8,13 @@ function modelLine(model) {
     : `Set model: "${model}".`;
 }
 
-function launch(agent, model, lead, fields) {
+function launch(agent, model, lead, fields, { runtime = "claude" } = {}) {
+  const firstLine =
+    runtime === "devin"
+      ? `${lead} Launch the \`${agent}\` subagent now using \`run_subagent\` with profile: "${agent}" and is_background: false, and wait for it.`
+      : `${lead} Launch the \`${agent}\` agent now with run_in_background: false and wait for it. ${modelLine(model)}`;
   return [
-    `${lead} Launch the \`${agent}\` agent now with run_in_background: false and wait for it. ${modelLine(model)}`,
+    firstLine,
     `Do not do this work yourself. Give it exactly this prompt:`,
     ``,
     ...fields,
@@ -18,24 +23,36 @@ function launch(agent, model, lead, fields) {
   ].join("\n");
 }
 
-export function reviewerInstruction({ digest, focus, d, model, project = null }) {
-  return launch("peka:reviewer", model, "PEKA learning checkpoint.", [
-    `Digest: ${digest}`,
-    `Focus: ${focus}`,
-    `Project: ${project ?? "none"}`,
-    `Memory dir: ${d.memory}`,
-    `Skills dir: ${d.skills}`,
-  ]);
+export function reviewerInstruction({ digest, focus, d, model, project = null, runtime = "claude" }) {
+  return launch(
+    "peka:reviewer",
+    model,
+    "PEKA learning checkpoint.",
+    [
+      `Digest: ${digest}`,
+      `Focus: ${focus}`,
+      `Project: ${project ?? "none"}`,
+      `Memory dir: ${d.memory}`,
+      `Skills dir: ${d.skills}`,
+    ],
+    { runtime },
+  );
 }
 
-export function curatorInstruction({ report, d, model, lead = "PEKA maintenance is due." }) {
-  return launch("peka:curator", model, lead, [
-    `Report: ${report}`,
-    `Project: none`,
-    `Actions file: ${path.join(d.state, "curator-actions.json")}`,
-    `Memory dir: ${d.memory}`,
-    `Skills dir: ${d.skills}`,
-  ]);
+export function curatorInstruction({ report, d, model, lead = "PEKA maintenance is due.", runtime = "claude" }) {
+  return launch(
+    "peka:curator",
+    model,
+    lead,
+    [
+      `Report: ${report}`,
+      `Project: none`,
+      `Actions file: ${path.join(d.state, "curator-actions.json")}`,
+      `Memory dir: ${d.memory}`,
+      `Skills dir: ${d.skills}`,
+    ],
+    { runtime },
+  );
 }
 
 function projectBrief(d, project) {
@@ -47,21 +64,43 @@ function projectBrief(d, project) {
   return [`Current project: ${project}. Its memories (read the ones that apply before working):`, ...entries];
 }
 
-export function sessionBrief(d, project = null) {
-  return [
-    `PEKA is active. Your memory in ${d.memory} is global: every project reads and writes the same store, and its index MEMORY.md is already in your context.`,
+function readMemoryIndex(d) {
+  try {
+    return fs.readFileSync(path.join(d.memory, "MEMORY.md"), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function sessionBrief(d, project = null, { runtime = "claude", includeMemory = false, cliPath = null } = {}) {
+  const isDevin = runtime === "devin";
+  const skillsPath = isDevin ? "~/.config/devin/skills" : "~/.claude/skills";
+  const lines = [
+    isDevin
+      ? `PEKA is active. Your memory in ${d.memory} is global: every project reads and writes the same store, and its index MEMORY.md is included below.`
+      : `PEKA is active. Your memory in ${d.memory} is global: every project reads and writes the same store, and its index MEMORY.md is already in your context.`,
     `- Before starting a task, scan the index for entries that apply (this project, the user's preferences, the tools involved) and read those files. Follow them without being asked.`,
-    `- When the user corrects you, states a preference, teaches you how to do something, or asks you to remember something, run /peka:remember right away; do not save the memory yourself. PEKA decides whether it becomes a memory or a skill. When they ask for a procedure to be saved as a skill, run /peka:skill. Do not write skills into ~/.claude/skills unless the user asks for a personal skill there.`,
+    `- When the user corrects you, states a preference, teaches you how to do something, or asks you to remember something, run /peka:remember right away; do not save the memory yourself. PEKA decides whether it becomes a memory or a skill. When they ask for a procedure to be saved as a skill, run /peka:skill. Do not write skills into ${skillsPath} unless the user asks for a personal skill there.`,
     `- Project-specific memories and skills carry metadata.project: <project>. PEKA builds MEMORY.md from the memory files, so do not edit the index by hand.`,
     `- A memory can be out of date. If it conflicts with what you observe now, trust what you observe and fix the memory.`,
     `- Skills PEKA learned are in your skill list: global ones in every session, project ones only in their project. Use one whenever its description fits the task.`,
+    ...(isDevin && cliPath ? [`- For /peka:* commands, run the PEKA CLI with: node "${cliPath}" <command>`] : []),
     ...projectBrief(d, project),
-  ].join("\n");
+  ];
+  if (includeMemory) {
+    const memoryContent = readMemoryIndex(d);
+    if (memoryContent) lines.push("", "## Global memory index (MEMORY.md)", memoryContent);
+  }
+  return lines.join("\n");
 }
 
-export function learnerInstruction({ digest, mode, d, model, project = null }) {
+export function learnerInstruction({ digest, mode, d, model, project = null, runtime = "claude" }) {
+  const firstLine =
+    runtime === "devin"
+      ? `Launch the \`peka:learner\` subagent now using \`run_subagent\` with profile: "peka:learner" and is_background: false. Give it this prompt: fill in the Request: line as described and copy the other lines exactly.`
+      : `Launch the \`peka:learner\` agent now. ${modelLine(model)} Give it this prompt: fill in the Request: line as described and copy the other lines exactly.`;
   return [
-    `Launch the \`peka:learner\` agent now. ${modelLine(model)} Give it this prompt: fill in the Request: line as described and copy the other lines exactly.`,
+    firstLine,
     ``,
     `Request: <the user's words: what they want remembered or saved, plus anything from this conversation the request refers to>`,
     `Mode: ${mode}`,

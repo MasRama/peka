@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { expandHome } from "./paths.mjs";
 
-const WRITE_TOOLS = new Set(["Write", "Edit"]);
-const READ_TOOLS = new Set(["Read", "Glob", "Grep"]);
+const WRITE_TOOLS = new Set(["Write", "Edit", "write", "edit"]);
+const READ_TOOLS = new Set(["Read", "Glob", "Grep", "read", "glob", "grep", "find_file_by_name"]);
 
 // Resolve symlinks on the longest existing prefix, then append the parts that do not exist yet.
 export function resolveReal(p) {
@@ -60,7 +60,7 @@ export function isExecutableSkill(text) {
 
 // The skill file as it will be after this Write or Edit, or null if that cannot be known.
 function resultingText(toolName, toolInput, file) {
-  if (toolName === "Write") return typeof toolInput?.content === "string" ? toolInput.content : null;
+  if (toolName === "Write" || toolName === "write") return typeof toolInput?.content === "string" ? toolInput.content : null;
   const { old_string: from, new_string: to, replace_all: all } = toolInput ?? {};
   if (typeof from !== "string" || typeof to !== "string" || !from) return null;
   let current;

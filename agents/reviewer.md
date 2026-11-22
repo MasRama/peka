@@ -134,7 +134,7 @@ Tag a skill with `metadata.project` when it only works in that project (its depl
 data layout). PEKA then lists it only in sessions of that project. An untagged skill is
 listed in every session of every project.
 
-Always write to the real path under `Skills dir`, never to `~/.claude/skills`. If a
+Always write to the real path under `Skills dir`, never to `~/.claude/skills` or `~/.config/devin/skills`. If a
 related skill exists, improve it instead of creating another.
 
 A skill is guidance, never automation. Do not add the frontmatter keys `hooks`,

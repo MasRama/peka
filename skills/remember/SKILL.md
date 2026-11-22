@@ -19,6 +19,8 @@ one short question first.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs" learn --session "${CLAUDE_SESSION_ID}" --mode decide
    ```
 
+   If `${CLAUDE_PLUGIN_ROOT}` is not expanded in your environment (e.g. Devin CLI), replace `${CLAUDE_PLUGIN_ROOT}/scripts/peka.mjs` with `<Base directory>/../../scripts/peka.mjs` (or the PEKA CLI path from the session briefing), and omit `--session "${CLAUDE_SESSION_ID}"` if `${CLAUDE_SESSION_ID}` is not expanded.
+
    If it says PEKA is not set up, tell the user to run `/peka:setup` and stop.
 2. Follow the instruction it prints: launch `peka:learner` with that prompt, putting the
    user's request in the `Request:` line in their own words, plus any details from this

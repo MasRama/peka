@@ -1,8 +1,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { claudeHome, dirs, ensureDirs, expandHome, pekaHome } from "./paths.mjs";
-import { loadConfig } from "./config.mjs";
+import {
+  claudeHome,
+  devinHome,
+  devinSessionsDb,
+  dirs,
+  ensureDirs,
+  expandHome,
+  isDevinRuntime,
+  pekaHome,
+  pluginRoot,
+} from "./paths.mjs";
+import { loadConfig, loadFileConfig } from "./config.mjs";
 import {
   isSetUp,
   loadCurator,
@@ -12,6 +22,7 @@ import {
   log,
   markActive,
   readJson,
+  recordLastSession,
   saveCurator,
   saveNotice,
   saveSession,
@@ -31,6 +42,7 @@ import {
   writeCuratorReport,
 } from "./skills.mjs";
 import { buildDigest, writeDigest } from "./digest.mjs";
+import { buildDevinDigest } from "./devin-sessions.mjs";
 import { curatorInstruction, reviewerInstruction, sessionBrief } from "./prompts.mjs";
 import { autoCommit, ensureRepo } from "./git.mjs";
 import { buildIndex } from "./memory-index.mjs";
@@ -45,14 +57,39 @@ const PEKA_AGENT = /^peka:(reviewer|curator|learner)$/;
 const HEADLESS = new Set(["sdk-cli", "claude-code-github-action", "mcp"]);
 
 export function contextFrom(env = process.env, now = new Date()) {
+  const d = dirs(pekaHome(env));
+  const root = pluginRoot(env);
   return {
     env,
     now,
-    d: dirs(pekaHome(env)),
-    cfg: loadConfig(env),
+    d,
+    cfg: loadConfig(env, loadFileConfig(d)),
+    runtime: isDevinRuntime(env) ? "devin" : "claude",
     claudeSkillsDir: path.join(claudeHome(env), "skills"),
+    devinSkillsDir: path.join(devinHome(env), "skills"),
+    devinDbPath: devinSessionsDb(env),
+    cliPath: root ? path.join(root, "scripts", "peka.mjs") : null,
     userHome: env.HOME?.trim() || os.homedir(),
   };
+}
+
+function skillsDirFor(ctx) {
+  return ctx.runtime === "devin" ? ctx.devinSkillsDir : ctx.claudeSkillsDir;
+}
+
+function inputCwd(input, ctx) {
+  if (ctx.runtime === "devin") {
+    return input?.cwd || ctx.env?.DEVIN_PROJECT_DIR || ctx.env?.CLAUDE_PROJECT_DIR || process.cwd();
+  }
+  return input?.cwd;
+}
+
+function isActiveDevinSubagent(ctx, input, s) {
+  return (
+    ctx.runtime === "devin" &&
+    Boolean(s?.activeAgent) &&
+    (!input?.prompt_id || !s.activeAgent.promptId || s.activeAgent.promptId === input.prompt_id)
+  );
 }
 
 function stamp(now) {
@@ -67,21 +104,26 @@ function context(event, text) {
   return { hookSpecificOutput: { hookEventName: event, additionalContext: text } };
 }
 
-// Global skills go into ~/.claude/skills; a project's skills go into the .claude/skills of the
-// repository the session works in, so other projects never list them.
+// Global skills go into the runtime's skills dir; project skills go into the repository's own
+// skills dir so other projects never list them.
 function sync(ctx, repo = null) {
   let changed = false;
   const apply = (dir, r) => {
     if (r.conflicts.length) log(ctx.d, `skill name conflicts in ${dir}: ${r.conflicts.join(", ")}`);
     changed ||= r.created.length > 0 || r.removed.length > 0;
   };
+  if (ctx.runtime === "devin") {
+    apply(ctx.devinSkillsDir, syncLinks(ctx.d, ctx.devinSkillsDir, globalSkills(ctx.d)));
+    if (repo) apply(path.join(repo.root, ".devin", "skills"), syncProjectLinks(ctx.d, repo, { dirName: ".devin" }));
+    return changed;
+  }
   apply(ctx.claudeSkillsDir, syncLinks(ctx.d, ctx.claudeSkillsDir, globalSkills(ctx.d)));
   if (repo) apply(path.join(repo.root, ".claude", "skills"), syncProjectLinks(ctx.d, repo));
   return changed;
 }
 
 function sessionRepo(ctx, input) {
-  return repoOf(input.cwd, { home: ctx.userHome });
+  return repoOf(inputCwd(input, ctx), { home: ctx.userHome });
 }
 
 function commit(ctx, message) {
@@ -91,7 +133,7 @@ function commit(ctx, message) {
 // The session's project, worked out once from its directory and kept in the session state.
 function sessionProject(ctx, input, s) {
   if (s.project !== undefined) return s.project;
-  s.project = projectOf(input.cwd, { home: ctx.userHome });
+  s.project = projectOf(inputCwd(input, ctx), { home: ctx.userHome });
   return s.project;
 }
 
@@ -117,12 +159,14 @@ function sessionStart(input, ctx) {
   ensureRepo(ctx.d.home);
   // Plugin options only reach hooks; the CLI reads them from here.
   writeJsonAtomic(path.join(ctx.d.state, "config.json"), ctx.cfg);
+  const cwd = inputCwd(input, ctx);
   const repo = sessionRepo(ctx, input);
   const project = repo?.project ?? null;
   if (typeof input.session_id === "string") {
     const s = loadSession(ctx.d, input.session_id);
     s.project = project;
     saveSession(ctx.d, input.session_id, s);
+    recordLastSession(ctx.d, cwd, input.session_id);
   }
   markActive(ctx.d, project, ctx.now);
   const curator = loadCurator(ctx.d);
@@ -138,22 +182,62 @@ function sessionStart(input, ctx) {
     }
   }
   buildIndex(ctx.d);
+  if (ctx.runtime === "devin") {
+    const brief = sessionBrief(ctx.d, project, { runtime: "devin", includeMemory: true, cliPath: ctx.cliPath });
+    sync(ctx, repo);
+    const notice = weeklyNotice(ctx);
+    return context("SessionStart", notice ? `${brief}\n\n${notice}` : brief);
+  }
   const out = { hookEventName: "SessionStart", additionalContext: sessionBrief(ctx.d, project) };
   if (sync(ctx, repo)) out.reloadSkills = true;
   const notice = weeklyNotice(ctx);
   return notice ? { systemMessage: notice, hookSpecificOutput: out } : { hookSpecificOutput: out };
 }
 
+function postCompaction(input, ctx, event = "PostCompact") {
+  if (ctx.runtime !== "devin") return null;
+  const project =
+    typeof input.session_id === "string"
+      ? sessionProject(ctx, input, loadSession(ctx.d, input.session_id))
+      : projectOf(inputCwd(input, ctx), { home: ctx.userHome });
+  buildIndex(ctx.d);
+  return context(event, sessionBrief(ctx.d, project, { runtime: "devin", includeMemory: true, cliPath: ctx.cliPath }));
+}
+
 function userPromptSubmit(input, ctx) {
   const s = loadSession(ctx.d, input.session_id);
+  if (s.activeAgent && s.activeAgent.promptId !== (input.prompt_id ?? null)) {
+    delete s.activeAgent;
+  }
   s.turnsSinceMemory += 1;
   const project = sessionProject(ctx, input, s);
   saveSession(ctx.d, input.session_id, s);
   markActive(ctx.d, project, ctx.now);
+  recordLastSession(ctx.d, inputCwd(input, ctx), input.session_id);
+  if (ctx.runtime === "devin" && typeof input.prompt === "string") {
+    const m = input.prompt.trim().match(/^\/([A-Za-z0-9._-]+)(?:\s|$)/);
+    if (m) recordSkillUse(ctx, m[1]);
+  }
   return null;
 }
 
 function preToolUse(input, ctx) {
+  if (ctx.runtime === "devin") {
+    if (input.tool_name === "run_subagent") {
+      const profile = input.tool_input?.profile;
+      const match = typeof profile === "string" && profile.match(PEKA_AGENT);
+      if (match && !input.tool_input?.is_background && typeof input.session_id === "string") {
+        const s = loadSession(ctx.d, input.session_id);
+        s.activeAgent = { role: match[1], agentType: profile, promptId: input.prompt_id ?? null };
+        saveSession(ctx.d, input.session_id, s);
+      }
+      return null;
+    }
+    const s = typeof input.session_id === "string" ? loadSession(ctx.d, input.session_id) : null;
+    const agentType = input.agent_type || (isActiveDevinSubagent(ctx, input, s) ? s.activeAgent.agentType : undefined);
+    const r = classify(input.tool_name, input.tool_input, ctx.d, ctx.devinSkillsDir, agentType);
+    return r.decision === "deny" ? { decision: "block", reason: r.reason ?? "PEKA manages this file." } : null;
+  }
   const r = classify(input.tool_name, input.tool_input, ctx.d, ctx.claudeSkillsDir, input.agent_type);
   if (!r.decision) return null;
   return {
@@ -163,6 +247,49 @@ function preToolUse(input, ctx) {
       permissionDecisionReason: r.reason ?? "PEKA manages this file.",
     },
   };
+}
+
+const SAFE_PEKA_CLI_SUBCOMMANDS = new Set([
+  "status",
+  "show",
+  "log",
+  "pin",
+  "unpin",
+  "search",
+  "where",
+  "legacy",
+  "audit",
+  "learn",
+  "review",
+  "curate",
+]);
+
+function isSafePekaCli(toolInput, cliPath) {
+  const cmd = toolInput?.command;
+  if (!cliPath || typeof cmd !== "string" || /[;&|`$<>()\n\r]/.test(cmd)) return false;
+  const m = cmd.match(/^\s*node\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s+([a-z]+)(?:\s|$)/);
+  if (!m) return false;
+  const script = m[1] || m[2] || m[3];
+  const sub = m[4];
+  if (!SAFE_PEKA_CLI_SUBCOMMANDS.has(sub)) return false;
+  try {
+    return fs.realpathSync(path.resolve(script)) === fs.realpathSync(path.resolve(cliPath));
+  } catch {
+    return path.resolve(script) === path.resolve(cliPath);
+  }
+}
+
+function permissionRequest(input, ctx) {
+  if (ctx.runtime !== "devin") return null;
+  if (input.tool_name === "exec") {
+    return isSafePekaCli(input.tool_input, ctx.cliPath) ? { decision: "approve" } : null;
+  }
+  const s = typeof input.session_id === "string" ? loadSession(ctx.d, input.session_id) : null;
+  const agentType = input.agent_type || (isActiveDevinSubagent(ctx, input, s) ? s.activeAgent.agentType : undefined);
+  const r = classify(input.tool_name, input.tool_input, ctx.d, ctx.devinSkillsDir, agentType);
+  if (r.decision === "allow") return { decision: "approve" };
+  if (r.decision === "deny") return { decision: "block", reason: r.reason ?? "PEKA manages this file." };
+  return null;
 }
 
 function skillNameFromRead(input, ctx) {
@@ -187,14 +314,17 @@ function userPromptExpansion(input, ctx) {
   return null;
 }
 
-// A SKILL.md written into a real directory under ~/.claude/skills bypassed PEKA's store.
+// A SKILL.md written into a real directory under the runtime's skills dir bypassed PEKA's store.
 function unmanagedSkillWrite(input, ctx) {
   const raw = input.tool_input?.file_path;
-  if (input.tool_name !== "Write" || typeof raw !== "string" || path.basename(raw) !== "SKILL.md") return null;
+  if ((input.tool_name !== "Write" && input.tool_name !== "write") || typeof raw !== "string" || path.basename(raw) !== "SKILL.md") {
+    return null;
+  }
+  const skillsDir = skillsDirFor(ctx);
   const file = path.resolve(expandHome(raw));
-  const parts = path.relative(ctx.claudeSkillsDir, file).split(path.sep);
+  const parts = path.relative(skillsDir, file).split(path.sep);
   if (parts.length !== 2 || parts[0].startsWith("..")) return null;
-  const st = fs.lstatSync(path.join(ctx.claudeSkillsDir, parts[0]), { throwIfNoEntry: false });
+  const st = fs.lstatSync(path.join(skillsDir, parts[0]), { throwIfNoEntry: false });
   if (!st || st.isSymbolicLink() || !st.isDirectory()) return null;
   return {
     hookSpecificOutput: {
@@ -205,9 +335,33 @@ function unmanagedSkillWrite(input, ctx) {
 }
 
 function postToolUse(input, ctx) {
+  if (ctx.runtime === "devin" && input.tool_name === "run_subagent") {
+    const profile = input.tool_input?.profile;
+    const match = typeof profile === "string" && profile.match(PEKA_AGENT);
+    if (match) {
+      if (typeof input.session_id === "string") {
+        const s = loadSession(ctx.d, input.session_id);
+        if (s.activeAgent) {
+          delete s.activeAgent;
+          saveSession(ctx.d, input.session_id, s);
+        }
+      }
+      const { noticeText, warningText } = finishPekaAgent(match[1], input, ctx);
+      const combined = [noticeText, warningText].filter(Boolean).join("\n");
+      return combined ? context("PostToolUse", combined) : null;
+    }
+  }
+
   const s = loadSession(ctx.d, input.session_id);
+  if (isActiveDevinSubagent(ctx, input, s)) {
+    const { kind } = classify(input.tool_name, input.tool_input, ctx.d, ctx.devinSkillsDir, s.activeAgent.agentType);
+    if (kind === "memory") buildIndex(ctx.d);
+    if (kind === "skill") sync(ctx, sessionRepo(ctx, input));
+    return null;
+  }
+
   s.toolsSinceSkill += 1;
-  const { kind } = classify(input.tool_name, input.tool_input, ctx.d, ctx.claudeSkillsDir);
+  const { kind } = classify(input.tool_name, input.tool_input, ctx.d, skillsDirFor(ctx));
   if (kind === "memory") {
     s.turnsSinceMemory = 0;
     buildIndex(ctx.d);
@@ -219,8 +373,8 @@ function postToolUse(input, ctx) {
   saveSession(ctx.d, input.session_id, s);
 
   let used = null;
-  if (input.tool_name === "Skill") used = input.tool_input?.skill;
-  else if (input.tool_name === "Read") used = skillNameFromRead(input, ctx);
+  if (input.tool_name === "Skill" || input.tool_name === "skill") used = input.tool_input?.skill;
+  else if (input.tool_name === "Read" || input.tool_name === "read") used = skillNameFromRead(input, ctx);
   recordSkillUse(ctx, used);
   return unmanagedSkillWrite(input, ctx);
 }
@@ -236,11 +390,16 @@ function reviewPrompt(input, ctx, s) {
   const skillDue = skillInterval > 0 && s.toolsSinceSkill >= skillInterval;
   if (!memoryDue && !skillDue) return null;
 
-  const transcript = typeof input.transcript_path === "string" ? expandHome(input.transcript_path) : "";
-  const digest = buildDigest(transcript, s.lastDigestLine, { lastAssistantMessage: input.last_assistant_message });
+  const hasTranscript = typeof input.transcript_path === "string" && input.transcript_path.trim() !== "";
+  const digest = hasTranscript
+    ? buildDigest(expandHome(input.transcript_path), s.lastDigestLine, { lastAssistantMessage: input.last_assistant_message })
+    : ctx.runtime === "devin"
+      ? buildDevinDigest(ctx.devinDbPath, input.session_id, s.lastDigestLine, { lastAssistantMessage: input.last_assistant_message })
+      : { text: "", toLine: s.lastDigestLine };
   if (!digest.text) return null;
 
-  const file = writeDigest(ctx.d, { sessionId: input.session_id, cwd: input.cwd, text: digest.text, now: ctx.now });
+  const cwd = inputCwd(input, ctx);
+  const file = writeDigest(ctx.d, { sessionId: input.session_id, cwd, text: digest.text, now: ctx.now });
 
   if (memoryDue) s.turnsSinceMemory = 0;
   if (skillDue) s.toolsSinceSkill = 0;
@@ -248,8 +407,10 @@ function reviewPrompt(input, ctx, s) {
   saveSession(ctx.d, input.session_id, s);
 
   const focus = memoryDue && skillDue ? "memory and skills" : memoryDue ? "memory" : "skills";
-  const project = s.project !== undefined ? s.project : projectOf(input.cwd, { home: ctx.userHome });
-  return context("Stop", reviewerInstruction({ digest: file, focus, d: ctx.d, model: ctx.cfg.reviewerModel, project }));
+  const project = s.project !== undefined ? s.project : projectOf(cwd, { home: ctx.userHome });
+  const runtime = ctx.runtime === "devin" ? "devin" : "claude";
+  const instruction = reviewerInstruction({ digest: file, focus, d: ctx.d, model: ctx.cfg.reviewerModel, project, runtime });
+  return runtime === "devin" ? { decision: "block", reason: instruction } : context("Stop", instruction);
 }
 
 function curatorPrompt(ctx) {
@@ -270,13 +431,19 @@ function curatorPrompt(ctx) {
   c.lastPromptAt = ctx.now.toISOString();
   saveCurator(ctx.d, c);
   const lead = overBudget ? "PEKA maintenance is due: the store is over budget." : undefined;
-  return context("Stop", curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel, lead }));
+  const runtime = ctx.runtime === "devin" ? "devin" : "claude";
+  const instruction = curatorInstruction({ report, d: ctx.d, model: ctx.cfg.curatorModel, lead, runtime });
+  return runtime === "devin" ? { decision: "block", reason: instruction } : context("Stop", instruction);
 }
 
 function stop(input, ctx) {
   if (input.stop_hook_active || pekaAgentRunning(input)) return null;
   if (HEADLESS.has(ctx.env?.CLAUDE_CODE_ENTRYPOINT)) return null;
   const s = loadSession(ctx.d, input.session_id);
+  if (ctx.runtime === "devin" && s.activeAgent) {
+    delete s.activeAgent;
+    saveSession(ctx.d, input.session_id, s);
+  }
   return reviewPrompt(input, ctx, s) ?? curatorPrompt(ctx);
 }
 
@@ -338,10 +505,7 @@ function pruneDigests(ctx) {
   }
 }
 
-function subagentStop(input, ctx) {
-  const match = typeof input.agent_type === "string" && input.agent_type.match(PEKA_AGENT);
-  if (!match) return null;
-  const role = match[1];
+function finishPekaAgent(role, input, ctx) {
   if (role !== "reviewer") applyActions(ctx, role);
   if (role === "curator") {
     const c = loadCurator(ctx.d);
@@ -353,39 +517,56 @@ function subagentStop(input, ctx) {
   buildIndex(ctx.d);
   const before = headCommit(ctx.d.home);
   commit(ctx, `peka: ${role} update`);
-  const notice = eachNotice(ctx, before);
+  const noticeText = eachNoticeText(ctx, before);
   const left = role === "curator" ? budgetProblems(ctx.d) : [];
-  if (!left.length) return notice;
-  const warning = `PEKA: still over budget: ${left.join("; ")}. The curator runs again tomorrow.`;
-  return { systemMessage: notice ? `${notice.systemMessage}\n${warning}` : warning };
+  const warningText = left.length
+    ? `PEKA: still over budget: ${left.join("; ")}. The curator runs again tomorrow.`
+    : null;
+  return { noticeText, warningText };
+}
+
+function subagentStop(input, ctx) {
+  const match = typeof input.agent_type === "string" && input.agent_type.match(PEKA_AGENT);
+  if (!match) return null;
+  const { noticeText, warningText } = finishPekaAgent(match[1], input, ctx);
+  if (!noticeText && !warningText) return null;
+  return { systemMessage: [noticeText, warningText].filter(Boolean).join("\n") };
 }
 
 // learning_notice "each": name what the commit just made changed.
-function eachNotice(ctx, before) {
+function eachNoticeText(ctx, before) {
   if (ctx.cfg.learningNotice !== "each" || !before) return null;
   const commits = changesSince(ctx.d.home, before);
   const items = mergeItems(commits);
-  return items.length ? { systemMessage: `PEKA: ${describe(items)}.` } : null;
+  return items.length ? `PEKA: ${describe(items)}.` : null;
 }
 
 export function handle(event, input, ctx) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   if (/^(1|true|yes)$/i.test(ctx.env?.PEKA_DISABLE ?? "")) return null;
   if (!isSetUp(ctx.d)) {
-    return event === "SessionStart"
-      ? { systemMessage: "PEKA is installed but not set up yet. Run /peka:setup to turn on global memory and learning." }
-      : null;
+    if (event !== "SessionStart") return null;
+    const msg = "PEKA is installed but not set up yet. Run /peka:setup to turn on global memory and learning.";
+    if (ctx.runtime === "devin") {
+      return context("SessionStart", msg + (ctx.cliPath ? `\nPEKA CLI: node "${ctx.cliPath}"` : ""));
+    }
+    return { systemMessage: msg };
   }
   const mainAgent = !input.agent_id;
   switch (event) {
     case "SessionStart":
       return sessionStart(input, ctx);
+    case "PostCompact":
+    case "PostCompaction":
+      return postCompaction(input, ctx, event);
     case "UserPromptSubmit":
       return mainAgent ? userPromptSubmit(input, ctx) : null;
     case "UserPromptExpansion":
       return mainAgent ? userPromptExpansion(input, ctx) : null;
     case "PreToolUse":
       return preToolUse(input, ctx);
+    case "PermissionRequest":
+      return permissionRequest(input, ctx);
     case "PostToolUse":
       return mainAgent ? postToolUse(input, ctx) : null;
     case "Stop":
